@@ -1160,6 +1160,23 @@ export async function loadEmployerDashboardOverview({ force = false } = {}) {
   }
 
   const company = companyPayload?.data || null
+  if (company?.verified !== true) {
+    return writeEmployerOverviewCache({
+      needsCompanyProfile: false,
+      needsAdminApproval: true,
+      company,
+      stats: {
+        totalJobs: 0,
+        openJobs: 0,
+        draftJobs: 0,
+        closedJobs: 0,
+        totalApplications: 0,
+        interviewing: 0,
+      },
+      recentActivities: [],
+    })
+  }
+
   const [jobsPayload, openPayload, draftPayload, closedPayload] = await Promise.all([
     requestJson(`/company/jobs?page=1&limit=${EMPLOYER_OVERVIEW_JOB_LIMIT}`, { auth: true, noCache: force }),
     requestJson('/company/jobs?page=1&limit=1&status=open', { auth: true, noCache: force }).catch(() => null),
@@ -1204,6 +1221,7 @@ export async function loadEmployerDashboardOverview({ force = false } = {}) {
 
   return writeEmployerOverviewCache({
     needsCompanyProfile: false,
+    needsAdminApproval: false,
     company,
     stats: {
       totalJobs,

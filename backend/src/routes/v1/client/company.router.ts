@@ -106,11 +106,12 @@ companyRouter.post(
   validate(createJobValidator),
   createCompanyJobController
 )
-companyRouter.get('/jobs', loadCompany, requireCompany, validate(getCompanyJobsValidator), getCompanyJobsController)
+companyRouter.get('/jobs', loadCompany, requireCompany, isVerifiedCompany, validate(getCompanyJobsValidator), getCompanyJobsController)
 companyRouter.get(
   '/jobs/:jobId',
   loadCompany,
   requireCompany,
+  isVerifiedCompany,
   validate(getCompanyJobDetailValidator),
   loadCompanyJob,
   requireCompanyJob,
@@ -120,6 +121,7 @@ companyRouter.get(
   '/jobs/:jobId/applications',
   loadCompany,
   requireCompany,
+  isVerifiedCompany,
   validate(getCompanyJobDetailValidator),
   loadCompanyJob,
   requireCompanyJob,
@@ -130,6 +132,7 @@ companyRouter.get(
   '/applications/:applicationId',
   loadCompany,
   requireCompany,
+  isVerifiedCompany,
   validate(getCompanyApplicationDetailValidator),
   loadCompanyApplicationDetail,
   requireCompanyApplicationDetail,
@@ -139,6 +142,7 @@ companyRouter.patch(
   '/applications/:applicationId/status',
   loadCompany,
   requireCompany,
+  isVerifiedCompany,
   writeLimiter,
   validate(updateCompanyApplicationStatusValidator),
   loadCompanyApplication,
@@ -150,6 +154,7 @@ companyRouter.patch(
   '/jobs/:jobId',
   loadCompany,
   requireCompany,
+  isVerifiedCompany,
   writeLimiter,
   validate(getCompanyJobDetailValidator),
   loadCompanyJob,
@@ -161,6 +166,7 @@ companyRouter.patch(
   '/jobs/:jobId/status',
   loadCompany,
   requireCompany,
+  isVerifiedCompany,
   writeLimiter,
   validate(getCompanyJobDetailValidator),
   loadCompanyJob,

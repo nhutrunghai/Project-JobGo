@@ -90,6 +90,7 @@ export default function EmployerOverviewDashboard() {
     interviewing: 0,
   })
   const [recentActivities, setRecentActivities] = useState([])
+  const [needsAdminApproval, setNeedsAdminApproval] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState('')
   const [logoFailed, setLogoFailed] = useState(false)
@@ -113,6 +114,7 @@ export default function EmployerOverviewDashboard() {
           })
           return
         }
+        setNeedsAdminApproval(data?.needsAdminApproval === true)
         setCompany(data.company)
         setStats(data.stats)
         setRecentActivities(data.recentActivities)
@@ -192,7 +194,7 @@ export default function EmployerOverviewDashboard() {
             </div>
           </div>
 
-          <div className="flex flex-wrap gap-2">
+          {!needsAdminApproval && <div className="flex flex-wrap gap-2">
             <Link to="/employer-post-job" className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 text-sm font-bold text-white shadow-lg shadow-blue-600/20 transition hover:bg-blue-700">
               <span className="material-symbols-outlined text-[18px]">add</span>
               Đăng tin mới
@@ -201,7 +203,7 @@ export default function EmployerOverviewDashboard() {
               <span className="material-symbols-outlined text-[18px]">manage_search</span>
               Quản lý job
             </Link>
-          </div>
+          </div>}
         </header>
 
         {error && (
@@ -210,7 +212,40 @@ export default function EmployerOverviewDashboard() {
           </div>
         )}
 
-        <>
+        {needsAdminApproval ? (
+          <section className="overflow-hidden rounded-xl border border-amber-200 bg-white shadow-sm">
+            <div className="border-b border-amber-100 bg-gradient-to-r from-amber-50 via-orange-50 to-white px-5 py-6 sm:px-7">
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
+                <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-amber-100 text-amber-600">
+                  <span className="material-symbols-outlined text-[30px]">pending_actions</span>
+                </div>
+                <div>
+                  <span className="inline-flex rounded-full bg-amber-100 px-2.5 py-1 text-xs font-bold text-amber-800">Đang chờ xác minh</span>
+                  <h2 className="mt-3 text-2xl font-extrabold tracking-tight text-slate-900">Hồ sơ công ty đang được admin duyệt</h2>
+                  <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">
+                    Chúng tôi đã nhận hồ sơ của <strong>{companyName}</strong>. Các chức năng đăng tin, quản lý ứng viên và lịch phỏng vấn sẽ được mở ngay sau khi hồ sơ được xác minh.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="grid gap-4 p-5 sm:grid-cols-3 sm:p-7">
+              {[
+                { icon: 'task_alt', title: 'Hồ sơ đã gửi', text: 'Thông tin công ty của bạn đã được ghi nhận.', tone: 'text-emerald-600 bg-emerald-50' },
+                { icon: 'admin_panel_settings', title: 'Admin đang kiểm tra', text: 'Vui lòng chờ kết quả xác minh từ quản trị viên.', tone: 'text-amber-600 bg-amber-50' },
+                { icon: 'rocket_launch', title: 'Bắt đầu tuyển dụng', text: 'Bạn sẽ có thể sử dụng đầy đủ tính năng sau khi được duyệt.', tone: 'text-blue-600 bg-blue-50' },
+              ].map((item) => (
+                <article key={item.title} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                  <span className={`inline-flex h-10 w-10 items-center justify-center rounded-xl ${item.tone}`}>
+                    <span className="material-symbols-outlined text-[21px]">{item.icon}</span>
+                  </span>
+                  <h3 className="mt-3 text-sm font-bold text-slate-900">{item.title}</h3>
+                  <p className="mt-1 text-xs leading-5 text-slate-500">{item.text}</p>
+                </article>
+              ))}
+            </div>
+          </section>
+        ) : <>
         <section className="mb-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
           <div className="mb-4 flex items-center justify-between gap-3">
             <div>
@@ -288,7 +323,7 @@ export default function EmployerOverviewDashboard() {
             )}
           </div>
         </section>
-        </>
+        </>}
         </div>
       </main>
     </div>
