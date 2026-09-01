@@ -16,9 +16,15 @@ export enum JobPromotionType {
 }
 
 export enum JobPromotionStatus {
+  SCHEDULED = 'scheduled',
   ACTIVE = 'active',
   EXPIRED = 'expired',
   CANCELLED = 'cancelled'
+}
+
+export enum JobPromotionSource {
+  EMPLOYER_PURCHASE = 'employer_purchase',
+  ADMIN_GRANT = 'admin_grant'
 }
 
 export enum JobType {

@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import AdminLayout from '../../components/AdminLayout.jsx'
 import Toast from '../../components/Toast.jsx'
 import { getAdminJobDetail, getAdminJobs, updateAdminJobModerationStatus } from '../../api/adminService.js'
+import { compactId, formatDateVi as formatDate } from '../../utils/formatters.js'
 
 const jobStatusLabelMap = {
   draft: 'Bản nháp',
@@ -75,13 +76,6 @@ function getVisibilityState(job) {
   }
 }
 
-function formatDate(value) {
-  if (!value) return 'Chưa có'
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return 'Chưa có'
-  return new Intl.DateTimeFormat('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' }).format(date)
-}
-
 function formatMoneyRange(salary) {
   if (!salary) return 'Chưa cập nhật'
   if (typeof salary === 'string') return salary
@@ -90,11 +84,6 @@ function formatMoneyRange(salary) {
   const currency = salary.currency || 'VND'
   if (min || max) return `${min || 0} - ${max || 0} ${currency}`
   return 'Chưa cập nhật'
-}
-
-function compactId(value) {
-  if (!value) return 'Chưa có'
-  return `${String(value).slice(0, 7)}...${String(value).slice(-5)}`
 }
 
 function buildPromotionLink(job) {
@@ -412,7 +401,7 @@ export default function AdminJobs() {
               </div>
 
               <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
-                <Field label="Mã tin" value={compactId(selectedJob._id)} />
+                <Field label="Mã tin" value={compactId(selectedJob._id, { prefix: 7, suffix: 5 })} />
                 <Field label="Danh mục" value={formatJobCategories(selectedJob)} />
                 <Field label="Cấp bậc" value={selectedJob.level} />
                 <Field label="Số lượng" value={selectedJob.quantity} />

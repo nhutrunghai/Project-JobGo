@@ -3,7 +3,9 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import Toast from '../../components/Toast.jsx'
 import DashboardSidebar from '../../components/DashboardSidebar.jsx'
 import EmployerTopBar from '../../components/EmployerTopBar.jsx'
-import { createCompanyJob, getCompanyJob, getCompanyPromotionPlans, getJobCategories, updateCompanyJob } from '../../api/companyService.js'
+import RichTextContent from '../../components/RichTextContent.jsx'
+import RichTextEditor from '../../components/RichTextEditor.jsx'
+import { createCompanyJob, getCompanyJob, getJobCategories, updateCompanyJob } from '../../api/companyService.js'
 import { loadHardcodedMock } from '../../data/hardcodedClient.js'
 
 const jobTypeOptions = [
@@ -30,7 +32,7 @@ const defaultSteps = [
   { id: 3, label: 'Xem trước và đăng' },
 ]
 
-const defaultPackageOptions = ['Đăng thường', 'Quảng cáo nổi bật']
+const STANDARD_POSTING_OPTION = 'Đăng thường'
 
 const emptyForm = {
   title: '',
@@ -48,7 +50,7 @@ const emptyForm = {
   benefits: '',
   skillsText: '',
   deadline: '',
-  packageType: 'Gói thường',
+  packageType: STANDARD_POSTING_OPTION,
 }
 
 function toDateInput(value) {
@@ -77,14 +79,11 @@ function splitList(value) {
     .filter(Boolean)
 }
 
-function formatParagraph(value) {
-  return String(value || '')
-    .split('\n')
-    .map((item) => item.trim())
-    .filter(Boolean)
+function getRichTextPlainText(value) {
+  return String(value || '').replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim()
 }
 
-function mapInitialForm(initialForm = {}, packageOptions = defaultPackageOptions) {
+function mapInitialForm(initialForm = {}) {
   return {
     ...emptyForm,
     title: initialForm.title || '',
@@ -102,7 +101,9 @@ function mapInitialForm(initialForm = {}, packageOptions = defaultPackageOptions
     benefits: initialForm.benefits || '',
     skillsText: Array.isArray(initialForm.skills) ? initialForm.skills.join(', ') : initialForm.skillsText || '',
     deadline: toDateInput(initialForm.expired_at || initialForm.deadline),
-    packageType: initialForm.packageType || packageOptions[0] || emptyForm.packageType,
+    // A newly created job must never be pre-selected for a paid promotion.
+    // Promotions are purchased separately after the job has been created.
+    packageType: STANDARD_POSTING_OPTION,
   }
 }
 
@@ -168,9 +169,9 @@ function validateForm(form) {
     if (Number(form.salaryMax) < Number(form.salaryMin)) return 'Lương tối đa phải lớn hơn hoặc bằng lương tối thiểu.'
   }
   if (!form.deadline || new Date(form.deadline).getTime() <= Date.now()) return 'Hạn ứng tuyển phải là ngày trong tương lai.'
-  if (form.description.trim().length < 2) return 'Mô tả công việc cần ít nhất 2 ký tự.'
-  if (form.requirements.trim().length < 2) return 'Yêu cầu công việc cần ít nhất 2 ký tự.'
-  if (form.benefits.trim().length < 2) return 'Quyền lợi cần ít nhất 2 ký tự.'
+  if (getRichTextPlainText(form.description).length < 2) return 'Mô tả công việc cần ít nhất 2 ký tự.'
+  if (getRichTextPlainText(form.requirements).length < 2) return 'Yêu cầu công việc cần ít nhất 2 ký tự.'
+  if (getRichTextPlainText(form.benefits).length < 2) return 'Quyền lợi cần ít nhất 2 ký tự.'
   return ''
 }
 
@@ -248,7 +249,7 @@ function CategoryTreeNode({ category, depth = 0, selectedIds, onToggle }) {
   )
 }
 
-function SmallPreviewCard({ form, selectedJobType, selectedLevel, salaryLabel, selectedCategoryLabels }) {
+function SmallPreviewCard({ form, selectedJobType, selectedLevel, salaryLabel }) {
   return (
     <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm lg:p-5">
       <h2 className="text-base font-bold text-slate-900 lg:text-lg">Xem trước nhanh</h2>
@@ -303,7 +304,6 @@ export default function EmployerRecruitmentDashboard() {
   const editJobId = location.state?.editJobId || ''
   const isEditing = Boolean(editJobId)
   const [steps, setSteps] = useState(defaultSteps)
-  const [packageOptions, setPackageOptions] = useState(defaultPackageOptions)
   const [categoryOptions, setCategoryOptions] = useState([])
   const [form, setForm] = useState(null)
   const [currentStep, setCurrentStep] = useState(1)
@@ -311,6 +311,23 @@ export default function EmployerRecruitmentDashboard() {
   const [savingStatus, setSavingStatus] = useState('')
   const [toast, setToast] = useState(null)
   const [categoryModalOpen, setCategoryModalOpen] = useState(false)
+  const [vietnamLocations, setVietnamLocations] = useState({ provinces: [], wards: [] })
+  const [locationsLoading, setLocationsLoading] = useState(false)
+
+  const ensureVietnamLocations = async () => {
+    if (locationsLoading || vietnamLocations.provinces.length || vietnamLocations.wards.length) return
+    setLocationsLoading(true)
+    try {
+      const module = await import('vietnam-address-database')
+      const database = module.default || module
+      const tables = Object.fromEntries(database.filter((item) => item.type === 'table').map((item) => [item.name, item.data]))
+      setVietnamLocations({ provinces: tables.provinces || [], wards: tables.wards || [] })
+    } catch {
+      setVietnamLocations({ provinces: [], wards: [] })
+    } finally {
+      setLocationsLoading(false)
+    }
+  }
 
   useEffect(() => {
     let active = true
@@ -318,43 +335,26 @@ export default function EmployerRecruitmentDashboard() {
     const loadData = async () => {
       const mock = await loadHardcodedMock().catch(() => null)
       const recruitment = mock?.employerRecruitment || {}
-      const [plansResponse, categoriesResponse] = await Promise.all([
-        getCompanyPromotionPlans().catch(() => ({ plans: [] })),
-        getJobCategories().catch(() => []),
-      ])
-      const planOptions = Array.isArray(plansResponse?.plans)
-        ? plansResponse.plans.map((plan) => {
-            const typeLabel = plan.type === 'homepage_featured' ? 'Quảng cáo nổi bật' : plan.name || 'Quảng cáo'
-            const dailyPrice = Number(plan.daily_price || 0).toLocaleString('vi-VN')
-            return `${typeLabel} • ${dailyPrice} ${plan.currency || 'VND'}/ngày`
-          })
-        : []
-      const nextPackageOptions =
-        planOptions.length
-          ? planOptions
-          : recruitment.options?.packageOptions?.length
-            ? recruitment.options.packageOptions
-            : defaultPackageOptions
+      const categoriesResponse = await getJobCategories().catch(() => [])
       const nextSteps = recruitment.steps?.length ? recruitment.steps : defaultSteps
 
       if (!active) return
       setSteps(nextSteps)
-      setPackageOptions(nextPackageOptions)
       setCategoryOptions(Array.isArray(categoriesResponse) ? categoriesResponse : [])
 
       if (editJobId) {
         const response = await getCompanyJob(editJobId)
         if (!active) return
-        setForm(mapJobToForm(response?.data || {}, nextPackageOptions[0]))
+        setForm(mapJobToForm(response?.data || {}, STANDARD_POSTING_OPTION))
         return
       }
 
-      setForm(mapInitialForm(recruitment.initialForm || {}, nextPackageOptions))
+      setForm(mapInitialForm(recruitment.initialForm || {}))
     }
 
     loadData().catch((error) => {
       if (!active) return
-      setForm(mapInitialForm({}, defaultPackageOptions))
+      setForm(mapInitialForm({}))
       setToast({ type: 'error', message: error.message || 'Không thể tải dữ liệu đăng job.' })
     })
 
@@ -484,9 +484,15 @@ export default function EmployerRecruitmentDashboard() {
               <input
                 className="h-11 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm outline-none transition focus:border-blue-300 focus:bg-white focus:ring-2 focus:ring-blue-100"
                 value={form.location}
+                onFocus={ensureVietnamLocations}
                 onChange={(event) => updateForm({ location: event.target.value })}
-                placeholder="Ha Noi"
+                placeholder="Chọn tỉnh/thành phố, phường/xã"
+                list="vietnam-location-options"
               />
+              <datalist id="vietnam-location-options">
+                {vietnamLocations.provinces.map((item) => <option key={`province-${item.province_code}`} value={item.name} />)}
+                {vietnamLocations.wards.map((item) => <option key={`ward-${item.ward_code}`} value={item.name} />)}
+              </datalist>
             </label>
             <div>
               <FieldLabel icon="category" label="Danh mục" />
@@ -560,41 +566,27 @@ export default function EmployerRecruitmentDashboard() {
               />
             </label>
 
-            <label>
-              <FieldLabel icon="sell" label="Gói quảng cáo" />
-              <select
-                className="h-11 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm font-semibold outline-none transition focus:border-blue-300 focus:bg-white focus:ring-2 focus:ring-blue-100"
-                value={form.packageType}
-                onChange={(event) => updateForm({ packageType: event.target.value })}
-              >
-                {packageOptions.map((item) => (
-                  <option key={item} value={item}>
-                    {item}
-                  </option>
-                ))}
-              </select>
-            </label>
           </div>
         </SectionBlock>
 
         <SectionBlock title="Lương">
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-[220px_minmax(0,1fr)]">
             <label>
-              <FieldLabel icon="payments" label="Ki?u l??ng" />
+              <FieldLabel icon="payments" label="Kiểu lương" />
               <select
                 className="h-11 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm font-semibold outline-none transition focus:border-blue-300 focus:bg-white focus:ring-2 focus:ring-blue-100"
                 value={form.negotiable ? 'negotiable' : 'range'}
                 onChange={(event) => updateForm({ negotiable: event.target.value === 'negotiable' })}
               >
-                <option value="range">Kho?ng l??ng</option>
-                <option value="negotiable">L??ng th?a thu?n</option>
+                <option value="range">Khoảng lương</option>
+                <option value="negotiable">Lương thỏa thuận</option>
               </select>
             </label>
 
             {!form.negotiable ? (
               <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_1fr_140px]">
                 <label>
-                  <FieldLabel icon="payments" label="L??ng t?i thi?u" />
+                  <FieldLabel icon="payments" label="Lương tối thiểu" />
                   <input
                     type="number"
                     min="0"
@@ -605,7 +597,7 @@ export default function EmployerRecruitmentDashboard() {
                 </label>
 
                 <label>
-                  <FieldLabel icon="trending_up" label="L??ng t?i ?a" />
+                  <FieldLabel icon="trending_up" label="Lương tối đa" />
                   <input
                     type="number"
                     min="0"
@@ -616,7 +608,7 @@ export default function EmployerRecruitmentDashboard() {
                 </label>
 
                 <label>
-                  <FieldLabel icon="currency_exchange" label="Ti?n t?" />
+                  <FieldLabel icon="currency_exchange" label="Tiền tệ" />
                   <select
                     className="h-11 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm font-semibold outline-none transition focus:border-blue-300 focus:bg-white focus:ring-2 focus:ring-blue-100"
                     value={form.currency}
@@ -629,15 +621,15 @@ export default function EmployerRecruitmentDashboard() {
               </div>
             ) : (
               <div className="flex min-h-[76px] items-center rounded-lg border border-dashed border-slate-200 bg-slate-50 px-4 text-sm font-semibold text-slate-500">
-                Tin tuy?n d?ng s? hi?n th? m?c l??ng l? ?Th?a thu?n?.
+                Tin tuyển dụng sẽ hiển thị mức lương là Thỏa thuận.
               </div>
             )}
           </div>
         </SectionBlock>
 
-        <SectionBlock title="K? n?ng">
+        <SectionBlock title="Kỹ năng">
           <label className="block">
-            <FieldLabel icon="code" label="K? n?ng y?u c?u" />
+            <FieldLabel icon="code" label="Kỹ năng yêu cầu" />
             <input
               className="h-11 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm outline-none transition focus:border-blue-300 focus:bg-white focus:ring-2 focus:ring-blue-100"
               value={form.skillsText}
@@ -654,29 +646,8 @@ export default function EmployerRecruitmentDashboard() {
           selectedJobType={selectedJobType}
           selectedLevel={selectedLevel}
           salaryLabel={salaryLabel}
-          selectedCategoryLabels={selectedCategoryLabels}
         />
 
-        <SectionBlock title="Gói quảng cáo">
-          <div className="grid gap-2">
-            {packageOptions.map((item) => {
-              const active = form.packageType === item
-              return (
-                <button
-                  key={item}
-                  type="button"
-                  onClick={() => updateForm({ packageType: item })}
-                  className={`flex h-11 items-center justify-between rounded-lg border px-3 text-sm font-semibold transition ${
-                    active ? 'border-blue-200 bg-blue-50 text-blue-700' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
-                  }`}
-                >
-                  <span>{item}</span>
-                  {active && <span className="material-symbols-outlined text-[18px]">check_circle</span>}
-                </button>
-              )
-            })}
-          </div>
-        </SectionBlock>
       </aside>
     </div>
   )
@@ -687,31 +658,31 @@ export default function EmployerRecruitmentDashboard() {
         <div className="space-y-4">
           <label className="block">
             <FieldLabel icon="article" label="Mô tả công việc" />
-            <textarea
-              className="min-h-[150px] w-full rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm outline-none transition focus:border-blue-300 focus:bg-white focus:ring-2 focus:ring-blue-100"
+            <RichTextEditor
               value={form.description}
-              onChange={(event) => updateForm({ description: event.target.value })}
+              onChange={(value) => updateForm({ description: value })}
               placeholder="Mô tả vai trò, phạm vi công việc và mục tiêu."
+              label="Mô tả công việc"
             />
           </label>
 
           <label className="block">
             <FieldLabel icon="fact_check" label="Yêu cầu công việc" />
-            <textarea
-              className="min-h-[150px] w-full rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm outline-none transition focus:border-blue-300 focus:bg-white focus:ring-2 focus:ring-blue-100"
+            <RichTextEditor
               value={form.requirements}
-              onChange={(event) => updateForm({ requirements: event.target.value })}
+              onChange={(value) => updateForm({ requirements: value })}
               placeholder="Nêu rõ yêu cầu kỹ thuật, kinh nghiệm và kỹ năng."
+              label="Yêu cầu công việc"
             />
           </label>
 
           <label className="block">
             <FieldLabel icon="redeem" label="Quyền lợi" />
-            <textarea
-              className="min-h-[150px] w-full rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm outline-none transition focus:border-blue-300 focus:bg-white focus:ring-2 focus:ring-blue-100"
+            <RichTextEditor
               value={form.benefits}
-              onChange={(event) => updateForm({ benefits: event.target.value })}
+              onChange={(value) => updateForm({ benefits: value })}
               placeholder="Lương tháng 13, BHXH, ngân sách học tập..."
+              label="Quyền lợi"
             />
           </label>
         </div>
@@ -773,15 +744,15 @@ export default function EmployerRecruitmentDashboard() {
 
         <div className="space-y-4 bg-white p-4 lg:space-y-5 lg:p-5">
           <DetailSection title="Mô tả công việc" icon="article">
-            {formatParagraph(form.description).map((line) => <p key={line}>{line}</p>)}
+            <RichTextContent value={form.description} />
           </DetailSection>
 
           <DetailSection title="Yêu cầu công việc" icon="fact_check">
-            {formatParagraph(form.requirements).map((line) => <p key={line}>{line}</p>)}
+            <RichTextContent value={form.requirements} />
           </DetailSection>
 
           <DetailSection title="Quyền lợi" icon="redeem">
-            {formatParagraph(form.benefits).map((line) => <p key={line}>{line}</p>)}
+            <RichTextContent value={form.benefits} />
           </DetailSection>
 
           <DetailSection title="Kỹ năng" icon="code">

@@ -235,6 +235,15 @@ class JobsService {
     const limit = params.limit
     const now = new Date()
 
+    await databaseService.jobPromotions.updateMany(
+      { status: { $in: [JobPromotionStatus.ACTIVE, JobPromotionStatus.SCHEDULED] }, ends_at: { $lte: now } },
+      { $set: { status: JobPromotionStatus.EXPIRED, updated_at: now } }
+    )
+    await databaseService.jobPromotions.updateMany(
+      { status: JobPromotionStatus.SCHEDULED, starts_at: { $lte: now }, ends_at: { $gt: now } },
+      { $set: { status: JobPromotionStatus.ACTIVE, updated_at: now } }
+    )
+
     const [result] = await databaseService.jobPromotions
       .aggregate<{
         items: PublicFeaturedJobListItem[]

@@ -7,6 +7,7 @@ import JobApplication from '~/models/schema/client/jobApplications.schema.js'
 import Job from '~/models/schema/client/jobs.schema.js'
 import JobCategory from '~/models/schema/client/job-categories.schema.js'
 import JobPromotion from '~/models/schema/client/jobPromotions.schema.js'
+import JobPromotionPlan from '~/models/schema/client/jobPromotionPlans.schema.js'
 import OtpCode from '~/models/schema/client/otpCodes.schema.js'
 import Resume from '~/models/schema/client/resumes.schema.js'
 import RefreshToken from '~/models/schema/client/refreshTokens.schema.js'
@@ -57,6 +58,10 @@ class DatabaseService {
 
   get jobPromotions(): Collection<JobPromotion> {
     return this.db.collection(env.DB_JOB_PROMOTION_NAME)
+  }
+
+  get jobPromotionPlans(): Collection<JobPromotionPlan> {
+    return this.db.collection(env.DB_JOB_PROMOTION_PLAN_NAME)
   }
 
   get wallets(): Collection<Wallet> {

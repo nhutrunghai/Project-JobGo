@@ -123,7 +123,6 @@ const CommonMessages = {
   JOB_PROMOTION_CREATED_SUCCESS: 'Thêm job vào promotion thành công',
   JOB_PROMOTION_UPDATED_SUCCESS: 'Cập nhật promotion thành công',
   JOB_PROMOTION_DELETED_SUCCESS: 'Xóa promotion thành công',
-  JOB_PROMOTION_REORDERED_SUCCESS: 'Sắp xếp promotion thành công',
   JOB_PROMOTION_PURCHASED_SUCCESS: 'Mua promotion cho job thành công',
   JOB_PROMOTION_CANCELLED_SUCCESS: 'Hủy promotion thành công',
   JOB_PROMOTION_CANCEL_NOT_ALLOWED: 'Không thể hủy promotion này',

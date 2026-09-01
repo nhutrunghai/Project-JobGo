@@ -7,7 +7,9 @@ const navItems = [
   { key: 'users', label: 'Người dùng', to: '/admin/users', icon: 'group' },
   { key: 'companies', label: 'Doanh nghiệp', to: '/admin/companies', icon: 'apartment' },
   { key: 'jobs', label: 'Tin tuyển dụng', to: '/admin/jobs', icon: 'work' },
+  { key: 'job-categories', label: 'Danh mục việc làm', to: '/admin/job-categories', icon: 'category' },
   { key: 'job-promotions', label: 'Quảng cáo tuyển dụng', to: '/admin/job-promotions', icon: 'star' },
+  { key: 'job-promotion-plans', label: 'Gói quảng cáo', to: '/admin/job-promotion-plans', icon: 'sell' },
   { key: 'wallet-transactions', label: 'Giao dịch ví', to: '/admin/wallet-transactions', icon: 'account_balance_wallet' },
   { key: 'sepay-config', label: 'Cấu hình SePay', to: '/admin/sepay-config', icon: 'settings_ethernet' },
   { key: 'rag-chat-config', label: 'Cấu hình RAG Chat', to: '/admin/rag-chat-config', icon: 'smart_toy' },
@@ -37,7 +39,7 @@ export default function AdminLayout({ title, subtitle, children }) {
       {mobileNavOpen ? (
         <button
           type="button"
-          aria-label="Dong menu quan tri"
+          aria-label="Đóng menu quản trị"
           onClick={() => setMobileNavOpen(false)}
           className="fixed inset-0 z-40 bg-slate-950/45 lg:hidden"
         />

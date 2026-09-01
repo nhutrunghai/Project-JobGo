@@ -3,6 +3,7 @@ import { useLocation } from 'react-router-dom'
 import AdminLayout from '../../components/AdminLayout.jsx'
 import Toast from '../../components/Toast.jsx'
 import { adjustAdminWalletBalance, getAdminUsers, getAdminWalletTransactions } from '../../api/adminService.js'
+import { compactId, formatCurrencyVi as formatMoney, formatDateTimeVi as formatDateTime } from '../../utils/formatters.js'
 
 const transactionTypeOptions = [
   { value: '', label: 'Tất cả loại giao dịch' },
@@ -55,32 +56,6 @@ const statusToneMap = {
 const directionToneMap = {
   credit: 'border-emerald-100 bg-emerald-50 text-emerald-700',
   debit: 'border-rose-100 bg-rose-50 text-rose-700',
-}
-
-function formatDateTime(value) {
-  if (!value) return 'Chưa có'
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return 'Chưa có'
-  return new Intl.DateTimeFormat('vi-VN', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  }).format(date)
-}
-
-function formatMoney(value, currency = 'VND') {
-  return new Intl.NumberFormat('vi-VN', {
-    style: 'currency',
-    currency: currency || 'VND',
-    maximumFractionDigits: currency === 'VND' ? 0 : 2,
-  }).format(Number(value || 0))
-}
-
-function compactId(value) {
-  if (!value) return 'Chưa có'
-  return `${String(value).slice(0, 8)}...${String(value).slice(-6)}`
 }
 
 function StatCard({ label, value, tone = 'text-slate-950' }) {

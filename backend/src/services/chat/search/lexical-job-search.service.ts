@@ -5,22 +5,32 @@ import { SEARCH_CANDIDATE_LIMIT, SearchHit, SearchPublicJobsParams } from './job
 
 class LexicalJobSearchService {
   async search(params: SearchPublicJobsParams): Promise<SearchHit[]> {
+    const queryText = params.q?.trim() || ''
+    const boolQuery: {
+      must?: object[]
+      filter: object[]
+    } = {
+      filter: this.buildPublicSearchFilters(params)
+    }
+
+    if (queryText) {
+      boolQuery.must = [
+        {
+          multi_match: {
+            query: queryText,
+            fields: ['title^4', 'skills^3', 'category_names^2', 'description', 'requirements', 'benefits']
+          }
+        }
+      ]
+    }
+
     const response = await ElasticsearchConfig.getInstance().search({
       index: env.PUBLIC_JOBS_SEARCH_INDEX,
       size: SEARCH_CANDIDATE_LIMIT,
       query: {
-        bool: {
-          must: [
-            {
-              multi_match: {
-                query: params.q,
-                fields: ['title^4', 'skills^3', 'category_names^2', 'description', 'requirements', 'benefits']
-              }
-            }
-          ],
-          filter: this.buildPublicSearchFilters(params)
-        }
-      }
+        bool: boolQuery
+      },
+      ...(queryText ? {} : { sort: [{ published_at: { order: 'desc' } }] })
     })
 
     return response.hits.hits.map((hit) => ({
@@ -47,6 +57,10 @@ class LexicalJobSearchService {
 
     if (params.level) {
       filters.push({ term: { level: params.level } })
+    }
+
+    if (params.category_id) {
+      filters.push({ term: { category_ids: params.category_id } })
     }
 
     return filters

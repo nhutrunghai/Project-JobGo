@@ -1,3 +1,7 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
 * {
   box-sizing: border-box;
 }
@@ -359,6 +363,32 @@ select.auth-input.auth-input-compact {
   font-size: 12px;
   font-weight: 600;
   line-height: 1.4;
+}
+
+.ProseMirror p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  height: 0;
+  pointer-events: none;
+  color: #94a3b8;
+}
+
+/* Compact applicant rows: keep the dense, scannable hierarchy of a work queue. */
+.received-profile-row h2 {
+  font-size: 15px !important;
+  font-weight: 650 !important;
+  line-height: 1.25 !important;
+}
+
+.received-profile-row p,
+.received-profile-row a,
+.received-profile-row button,
+.received-profile-row span {
+  letter-spacing: -0.01em;
+}
+
+.received-profile-row p {
+  line-height: 1.25;
 }
 
 :where(.dashboard-copy-font h1) {

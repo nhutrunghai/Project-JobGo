@@ -3,48 +3,13 @@ import { Link } from 'react-router-dom'
 import Toast from '../../components/Toast.jsx'
 import DashboardSidebar from '../../components/DashboardSidebar.jsx'
 import EmployerTopBar from '../../components/EmployerTopBar.jsx'
+import { formatCurrencyVi as formatMoney, formatDateTimeVi as formatDateTime } from '../../utils/formatters.js'
+import {
+  getPromotionDurationDays,
+  PROMOTION_STATUS_OPTIONS,
+  PROMOTION_STATUS_TONES,
+} from '../../features/job-promotions/presentation.js'
 import { getCompanyJobPromotions } from '../../api/companyService.js'
-
-const statusOptions = [
-  { value: '', label: 'Tất cả trạng thái' },
-  { value: 'active', label: 'Đang hiển thị' },
-  { value: 'expired', label: 'Đã hết hạn' },
-  { value: 'cancelled', label: 'Đã hủy' },
-]
-
-const statusToneMap = {
-  active: 'border-emerald-200 bg-emerald-50 text-emerald-700',
-  expired: 'border-amber-200 bg-amber-50 text-amber-700',
-  cancelled: 'border-rose-200 bg-rose-50 text-rose-700',
-}
-
-function formatDateTime(value) {
-  if (!value) return 'Chưa có'
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return 'Chưa có'
-  return new Intl.DateTimeFormat('vi-VN', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  }).format(date)
-}
-
-function formatMoney(value, currency = 'VND') {
-  return new Intl.NumberFormat('vi-VN', {
-    style: 'currency',
-    currency,
-    maximumFractionDigits: currency === 'VND' ? 0 : 2,
-  }).format(Number(value || 0))
-}
-
-function getDurationDays(promotion) {
-  const startsAt = new Date(promotion?.starts_at || 0)
-  const endsAt = new Date(promotion?.ends_at || 0)
-  if (Number.isNaN(startsAt.getTime()) || Number.isNaN(endsAt.getTime())) return 0
-  return Math.max(1, Math.round((endsAt.getTime() - startsAt.getTime()) / 86400000))
-}
 
 export default function EmployerJobPromotions() {
   const [promotions, setPromotions] = useState([])
@@ -55,8 +20,6 @@ export default function EmployerJobPromotions() {
 
   useEffect(() => {
     let active = true
-    setLoading(true)
-
     getCompanyJobPromotions({
       page: pagination.page,
       limit: pagination.limit,
@@ -81,10 +44,6 @@ export default function EmployerJobPromotions() {
       active = false
     }
   }, [pagination.page, pagination.limit, status])
-
-  useEffect(() => {
-    setPagination((current) => ({ ...current, page: 1 }))
-  }, [status])
 
   const stats = useMemo(() => ({
     active: promotions.filter((item) => item.status === 'active').length,
@@ -123,10 +82,14 @@ export default function EmployerJobPromotions() {
             <div className="grid grid-cols-1 gap-3 lg:grid-cols-[220px_1fr]">
               <select
                 value={status}
-                onChange={(event) => setStatus(event.target.value)}
+                onChange={(event) => {
+                  setLoading(true)
+                  setStatus(event.target.value)
+                  setPagination((current) => ({ ...current, page: 1 }))
+                }}
                 className="h-11 rounded-lg border border-slate-200 bg-slate-50 px-4 text-[15px] font-semibold outline-none transition focus:border-blue-300 focus:bg-white focus:ring-2 focus:ring-blue-100"
               >
-                {statusOptions.map((option) => (
+                {PROMOTION_STATUS_OPTIONS.map((option) => (
                   <option key={option.value || 'all'} value={option.value}>{option.label}</option>
                 ))}
               </select>
@@ -161,11 +124,11 @@ export default function EmployerJobPromotions() {
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2.5">
                       <h3 className="text-[17px] font-extrabold tracking-tight text-slate-900">{promotion.job?.title || 'Tin tuyển dụng'}</h3>
-                      <span className={`inline-flex rounded-lg border px-3 py-1 text-[11px] font-semibold ${statusToneMap[promotion.status] || statusToneMap.active}`}>
-                        {statusOptions.find((option) => option.value === promotion.status)?.label || promotion.status}
+                      <span className={`inline-flex rounded-lg border px-3 py-1 text-[11px] font-semibold ${PROMOTION_STATUS_TONES[promotion.status] || PROMOTION_STATUS_TONES.active}`}>
+                        {PROMOTION_STATUS_OPTIONS.find((option) => option.value === promotion.status)?.label || promotion.status}
                       </span>
                     </div>
-                    <p className="mt-2 text-sm text-slate-500">{promotion.job?.location || 'Chưa có địa điểm'} • {promotion.job?.level || 'Chưa có cấp bậc'}</p>
+                    <p className="mt-2 text-sm text-slate-500">{promotion.plan_snapshot?.name || 'Gói quảng cáo'} • {promotion.job?.location || 'Chưa có địa điểm'} • {promotion.job?.level || 'Chưa có cấp bậc'}</p>
                     <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-4">
                       <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5">
                         <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">Bắt đầu</p>
@@ -177,7 +140,7 @@ export default function EmployerJobPromotions() {
                       </div>
                       <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5">
                         <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">Thời lượng</p>
-                        <p className="mt-1 text-[12px] font-semibold text-slate-700">{getDurationDays(promotion)} ngày</p>
+                        <p className="mt-1 text-[12px] font-semibold text-slate-700">{getPromotionDurationDays(promotion)} ngày</p>
                       </div>
                       <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5">
                         <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">Đã thanh toán</p>

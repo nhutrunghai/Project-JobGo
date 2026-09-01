@@ -3,7 +3,6 @@
   "navLinks": [
     { "icon": "work_outline", "label": "Việc làm Freelance" },
     { "icon": "business_center", "label": "Việc làm IT" },
-    { "icon": "person_search", "label": "Tìm Developer" },
     { "icon": "forum", "label": "Thảo luận" },
     { "icon": "smart_toy", "label": "AI Coding Agent" },
     { "icon": "analytics", "label": "AI Analysis" }
@@ -42,7 +41,6 @@
       "employer": "Sky Tech Solutions",
       "time": "1 ngày trước",
       "location": "Thành phố Hồ Chí Minh",
-      "title": "Senior Mobile Developer (React Native)",
       "salary": "35.000.000 đ - 50.000.000 đ",
       "deadline": "30/11/2024",
       "skills": ["React Native", "TypeScript"],
@@ -79,10 +77,8 @@
       "avatar": ""
     }
   ],
-  "featuredDevelopers": [
     {
       "name": "Alex Chen",
-      "role": "Full Stack Developer",
       "avatar": "https://lh3.googleusercontent.com/aida-public/AB6AXuAXcx8usFoUWli7UHrIztTarWuV2DTUvehF0zpNVdEc2zXKc15bE9nE-WsplQrMFYFEMl_HQJigjeo6Ezo8sJO-RcQ6kq43BvcnoabJgrjAcKCJn9NPEKFVdU_jARSHZKl3eJjUpt2BcsEVeMC2RY-7E6IJaTXswTOmi7XqDu05oqDi-TTCvjk5JXgva6mus2anhF6C_w5QmYbJFbxVH8FzD80Kaj78PY2n9CEj2czmCSxbY2DOXxx47Y3e_BmPCfS4JOXyd1MnGfE"
     },
     {

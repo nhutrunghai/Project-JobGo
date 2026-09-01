@@ -1,12 +1,15 @@
 import { Link } from 'react-router-dom'
 import { useEffect, useMemo, useState } from 'react'
-import { loadFavoriteIds, loadFavoriteJobs, toggleFavoriteJob } from '../data/apiClient.js'
-
-const FAVORITE_STORAGE_KEY = 'favorite_job_ids'
+import PublicHeader from '../components/layout/PublicHeader.jsx'
+import useCurrentUser from '../hooks/useCurrentUser.js'
+import { useFavoriteStore } from '../stores/useFavoriteStore.js'
+import { loadFavoriteJobs } from '../data/apiClient.js'
 
 export default function Favorites() {
+  const session = useCurrentUser()
+  const favoriteIds = useFavoriteStore((state) => state.favoriteIds)
+  const toggleFavoriteInStore = useFavoriteStore((state) => state.toggle)
   const [jobs, setJobs] = useState([])
-  const [favoriteIds, setFavoriteIds] = useState([])
 
   useEffect(() => {
     const loadJobs = async () => {
@@ -19,58 +22,21 @@ export default function Favorites() {
     }
     loadJobs()
 
-    const loadIds = async () => {
-      try {
-        const ids = await loadFavoriteIds()
-        setFavoriteIds(ids)
-      } catch {
-        setFavoriteIds([])
-      }
-    }
-    loadIds()
   }, [])
 
   const favoriteJobs = useMemo(() => {
-    const set = new Set(favoriteIds)
-    return jobs.filter((job) => set.has(job.id))
+    return jobs.filter((job) => favoriteIds.has(job.id))
   }, [jobs, favoriteIds])
 
   const removeFavorite = (id) => {
-    const previousFavoriteIds = favoriteIds
-    const previousJobs = jobs
-
-    setFavoriteIds((prev) => {
-      const next = prev.filter((item) => item !== id)
-      localStorage.setItem(FAVORITE_STORAGE_KEY, JSON.stringify(next))
-      return next
-    })
-    setJobs((prev) => prev.filter((job) => job.id !== id))
-
-    toggleFavoriteJob(id, false).catch(() => {
-      setFavoriteIds(previousFavoriteIds)
-      setJobs(previousJobs)
-      localStorage.setItem(FAVORITE_STORAGE_KEY, JSON.stringify(previousFavoriteIds))
+    void toggleFavoriteInStore(id).catch((error) => {
+      console.error('Failed to remove favorite job', error)
     })
   }
 
   return (
     <div className="min-h-screen bg-[#f7f9fc] text-slate-900">
-      <nav className="sticky top-0 z-50 border-b border-slate-200 bg-white/95 backdrop-blur-md">
-        <div className="mx-auto flex max-w-[1240px] items-center justify-between px-6 py-2.5">
-          <div className="flex items-center gap-5">
-            <Link to="/" className="flex items-center text-xl font-bold tracking-tight text-[#2b59ff]">
-              <span className="material-symbols-outlined mr-1 text-2xl" style={{ fontVariationSettings: "'FILL' 1" }}>
-                code
-              </span>
-              MYCODER
-            </Link>
-            <span className="text-sm font-semibold text-slate-700">Công việc yêu thích</span>
-          </div>
-          <Link to="/" className="rounded-lg bg-[#007bff] px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-700">
-            Quay lại trang chủ
-          </Link>
-        </div>
-      </nav>
+      <PublicHeader session={session} activeAccountPath="/favorites" />
 
       <main className="mx-auto max-w-[1240px] px-6 py-5">
         <section className="panel-enter rounded-xl border border-slate-200 bg-white p-4 shadow-sm" style={{ animationDelay: '40ms' }}>
@@ -85,7 +51,7 @@ export default function Favorites() {
                 <div>
                   <h2 className="text-[17px] font-semibold text-slate-900">{job.title}</h2>
                   <p className="mt-1 text-[13px] text-slate-600">
-                    {job.company} • {job.location}
+                    {job.company} / {job.location}
                   </p>
                   <p className="mt-2 text-[13px] font-semibold text-emerald-600">{job.salary}</p>
                 </div>

@@ -35,7 +35,6 @@ export const getAdminJobPromotionsController = async (req: Request, res: Respons
     data: result
   })
 }
-
 export const getAdminJobPromotionDetailController = async (req: Request, res: Response) => {
   const promotionId = new ObjectId(req.params.promotionId as string)
   const promotion = await adminJobPromotionService.getPromotionByIdOrThrow(promotionId)
@@ -54,26 +53,18 @@ export const createAdminJobPromotionController = async (
     any,
     {
       jobId: string
-      type?: JobPromotionType
-      status?: JobPromotionStatus
+      plan_id: string
       starts_at: string
       ends_at: string
-      priority?: number
-      amount_paid?: number
-      currency?: 'VND' | 'USD'
     }
   >,
   res: Response
 ) => {
   const promotion = await adminJobPromotionService.createPromotion({
     jobId: new ObjectId(req.body.jobId),
-    type: req.body.type || JobPromotionType.HOMEPAGE_FEATURED,
-    status: req.body.status,
+    planId: new ObjectId(req.body.plan_id),
     startsAt: new Date(req.body.starts_at),
-    endsAt: new Date(req.body.ends_at),
-    priority: req.body.priority ?? 0,
-    amountPaid: req.body.amount_paid ?? 0,
-    currency: req.body.currency || 'VND'
+    endsAt: new Date(req.body.ends_at)
   })
 
   await adminAuditLogService.create({
@@ -84,6 +75,7 @@ export const createAdminJobPromotionController = async (
     statusCode: StatusCodes.CREATED,
     metadata: {
       job_id: promotion.job_id,
+      plan_id: promotion.plan_id,
       type: promotion.type,
       status: promotion.status,
       starts_at: promotion.starts_at,
@@ -106,13 +98,10 @@ export const updateAdminJobPromotionController = async (
     any,
     any,
     {
-      type?: JobPromotionType
+      plan_id?: string
       status?: JobPromotionStatus
       starts_at?: string
       ends_at?: string
-      priority?: number
-      amount_paid?: number
-      currency?: 'VND' | 'USD'
     }
   >,
   res: Response
@@ -120,13 +109,10 @@ export const updateAdminJobPromotionController = async (
   const promotionId = new ObjectId(req.params.promotionId as string)
   const promotion = await adminJobPromotionService.updatePromotion({
     promotionId,
-    type: req.body.type,
+    planId: req.body.plan_id ? new ObjectId(req.body.plan_id) : undefined,
     status: req.body.status,
     startsAt: req.body.starts_at ? new Date(req.body.starts_at) : undefined,
-    endsAt: req.body.ends_at ? new Date(req.body.ends_at) : undefined,
-    priority: req.body.priority,
-    amountPaid: req.body.amount_paid,
-    currency: req.body.currency
+    endsAt: req.body.ends_at ? new Date(req.body.ends_at) : undefined
   })
 
   await adminAuditLogService.create({
@@ -172,33 +158,5 @@ export const deleteAdminJobPromotionController = async (req: Request, res: Respo
     data: {
       promotion
     }
-  })
-}
-
-export const reorderAdminJobPromotionsController = async (
-  req: Request<any, any, { items: Array<{ promotionId: string; priority: number }> }>,
-  res: Response
-) => {
-  const result = await adminJobPromotionService.reorderPromotions(
-    req.body.items.map((item) => ({
-      promotionId: new ObjectId(item.promotionId),
-      priority: item.priority
-    }))
-  )
-
-  await adminAuditLogService.create({
-    req,
-    action: AdminAuditAction.JOB_PROMOTION_REORDER,
-    targetType: AdminAuditTargetType.JOB_PROMOTION,
-    statusCode: StatusCodes.OK,
-    metadata: {
-      items: req.body.items
-    }
-  })
-
-  return res.status(StatusCodes.OK).json({
-    status: 'success',
-    message: UserMessages.JOB_PROMOTION_REORDERED_SUCCESS,
-    data: result
   })
 }

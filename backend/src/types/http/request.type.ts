@@ -7,20 +7,18 @@ export interface RegisterRqType {
   password: string
   device_info: string
   role?: UserRole
+  remember?: boolean
 }
 
 export interface LoginRqType {
   email: string
   password: string
+  remember?: boolean
 }
 
 export interface AdminLoginRqType {
   email: string
   password: string
-}
-
-export interface RefreshRqType {
-  refresh_token: string
 }
 
 export interface EmailVerifyRqType {

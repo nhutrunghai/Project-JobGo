@@ -1,16 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
-import { getMyProfile } from '../api/userService.js'
+import PublicHeader from '../components/layout/PublicHeader.jsx'
 import UserAvatar from '../components/UserAvatar.jsx'
-import JobCategoryNavItem from '../components/JobCategoryNavItem.jsx'
-import { loadFavoriteIds, loadJobsForHome, searchPublicJobs, toggleFavoriteJob } from '../data/apiClient.js'
-import { getAccessToken, getRefreshToken } from '../config/api.js'
-
-const homeNav = [
-  { label: 'Việc làm IT', path: '/search-jobs', icon: 'work' },
-  { label: 'Bài viết', path: '/discussions', icon: 'article' },
-  { label: 'AI Agent', path: '/ai-agent', icon: 'smart_toy' },
-]
+import useCurrentUser from '../hooks/useCurrentUser.js'
+import { useFavoriteStore } from '../stores/useFavoriteStore.js'
+import { loadJobsForHome, searchPublicJobs } from '../data/apiClient.js'
 const locationOptions = [
   { label: 'Tất cả địa điểm', value: '' },
   { label: 'Hồ Chí Minh', value: 'Ho Chi Minh' },
@@ -37,15 +31,14 @@ const levelOptions = [
   { label: 'Manager', value: 'manager' },
 ]
 const suggestedKeywords = ['tester tieng nhat', 'tester intern', 'manual tester', 'automation tester', 'fresher tester']
-const FAVORITE_STORAGE_KEY = 'favorite_job_ids'
-
 export default function SearchJobs() {
   const navigate = useNavigate()
+  const session = useCurrentUser()
+  const { isAuthenticated } = session
+  const favoriteIds = useFavoriteStore((state) => state.favoriteIds)
+  const toggleFavoriteInStore = useFavoriteStore((state) => state.toggle)
   const [searchParams, setSearchParams] = useSearchParams()
   const [jobs, setJobs] = useState([])
-  const [userProfile, setUserProfile] = useState(null)
-  const [userMenuOpen, setUserMenuOpen] = useState(false)
-  const [isAuthenticated, setIsAuthenticated] = useState(() => Boolean(getAccessToken() || getRefreshToken()))
   const [keyword, setKeyword] = useState(searchParams.get('q') || '')
   const [location, setLocation] = useState(searchParams.get('location') || '')
   const [jobType, setJobType] = useState(searchParams.get('job_type') || '')
@@ -53,70 +46,13 @@ export default function SearchJobs() {
   const [isSearching, setIsSearching] = useState(false)
   const [searchError, setSearchError] = useState('')
   const [pagination, setPagination] = useState(null)
-  const [favoriteIds, setFavoriteIds] = useState(() => {
-    try {
-      const raw = localStorage.getItem(FAVORITE_STORAGE_KEY)
-      const parsed = raw ? JSON.parse(raw) : []
-      return new Set(Array.isArray(parsed) ? parsed : [])
-    } catch {
-      return new Set()
-    }
-  })
-
-  const isLoggedIn = () => Boolean(getAccessToken() || getRefreshToken())
-
-  useEffect(() => {
-    let active = true
-
-    if (!isAuthenticated) {
-      return () => {
-        active = false
-      }
-    }
-
-    getMyProfile()
-      .then((profile) => {
-        if (active) {
-          setUserProfile(profile)
-        }
-      })
-      .catch(() => {
-        if (active) {
-          setUserProfile(null)
-        }
-      })
-
-    return () => {
-      active = false
-    }
-  }, [isAuthenticated])
-
-  useEffect(() => {
-    let active = true
-
-    loadFavoriteIds()
-      .then((ids) => {
-        if (active) setFavoriteIds(new Set(ids))
-      })
-      .catch(() => {
-        if (active) setFavoriteIds(new Set())
-      })
-
-    return () => {
-      active = false
-    }
-  }, [])
-
-  useEffect(() => {
-    localStorage.setItem(FAVORITE_STORAGE_KEY, JSON.stringify(Array.from(favoriteIds)))
-  }, [favoriteIds])
-
   useEffect(() => {
     let active = true
     const submittedKeyword = String(searchParams.get('q') || '').trim()
     const submittedLocation = String(searchParams.get('location') || '').trim()
     const submittedJobType = String(searchParams.get('job_type') || '').trim()
     const submittedLevel = String(searchParams.get('level') || '').trim()
+    const submittedCategoryId = String(searchParams.get('category_id') || '').trim()
 
     setKeyword(submittedKeyword)
     setLocation(submittedLocation)
@@ -126,7 +62,9 @@ export default function SearchJobs() {
     async function loadSearchResults() {
       setSearchError('')
 
-      if (submittedKeyword.length < 2) {
+      const hasSubmittedFilters = Boolean(submittedLocation || submittedJobType || submittedLevel || submittedCategoryId)
+
+      if (submittedKeyword.length < 2 && !hasSubmittedFilters) {
         setIsSearching(false)
         setPagination(null)
         const fallbackJobs = await loadJobsForHome()
@@ -141,6 +79,7 @@ export default function SearchJobs() {
           location: submittedLocation || undefined,
           job_type: submittedJobType || undefined,
           level: submittedLevel || undefined,
+          category_id: submittedCategoryId || undefined,
           page: Number(searchParams.get('page') || 1),
           limit: 10,
         })
@@ -170,16 +109,16 @@ export default function SearchJobs() {
   const totalResults = Number(pagination?.total ?? filteredJobs.length)
   const totalPages = Math.max(1, Number(pagination?.total_pages || Math.ceil(totalResults / limit) || 1))
 
-  const profileName = userProfile?.fullName || userProfile?.username || 'Tài khoản người dùng'
-  const profileHandle = userProfile?.username ? `@${userProfile.username}` : '@mycoder-user'
-  const profileAvatar = userProfile?.avatar || ''
-
   const submitSearch = () => {
     const next = {}
     if (keyword.trim()) next.q = keyword.trim()
     if (location) next.location = location
     if (jobType) next.job_type = jobType
     if (level) next.level = level
+    const currentCategoryId = searchParams.get('category_id')
+    const currentCategoryName = searchParams.get('category_name')
+    if (currentCategoryId) next.category_id = currentCategoryId
+    if (currentCategoryName) next.category_name = currentCategoryName
     next.page = '1'
     setSearchParams(next)
   }
@@ -202,117 +141,19 @@ export default function SearchJobs() {
   }
 
   const toggleFavorite = (jobId) => {
-    if (!isLoggedIn()) {
+    if (!isAuthenticated) {
       navigate('/login', { state: { from: { pathname: '/search-jobs', search: `?${searchParams.toString()}` } } })
       return
     }
 
-    const shouldFavorite = !favoriteIds.has(jobId)
-
-    setFavoriteIds((current) => {
-      const next = new Set(current)
-      if (shouldFavorite) next.add(jobId)
-      else next.delete(jobId)
-      return next
+    void toggleFavoriteInStore(jobId).catch((error) => {
+      console.error('Failed to update favorite job', error)
     })
-
-    toggleFavoriteJob(jobId, shouldFavorite).catch(() => {
-      setFavoriteIds((current) => {
-        const next = new Set(current)
-        if (shouldFavorite) next.delete(jobId)
-        else next.add(jobId)
-        return next
-      })
-    })
-  }
-
-  const handleLogout = () => {
-    ;['token', 'accessToken', 'refreshToken', 'user', 'authUser', 'isLoggedIn'].forEach((key) => {
-      localStorage.removeItem(key)
-      sessionStorage.removeItem(key)
-    })
-    setUserMenuOpen(false)
-    setUserProfile(null)
-    setIsAuthenticated(false)
-    navigate('/login')
   }
 
   return (
     <div className="min-h-screen bg-[#f2f5fa] text-on-surface">
-      <nav className="sticky top-0 z-50 w-full border-b border-slate-100 bg-white/95 backdrop-blur-md">
-        <div className="mx-auto flex max-w-[1180px] items-center justify-between px-4 py-2 sm:px-5">
-          <div className="flex min-w-0 items-center gap-6">
-            <Link to="/" className="flex min-w-0 items-center text-lg font-bold tracking-tight text-[#2b59ff] sm:text-xl">
-              <span className="material-symbols-outlined mr-1 text-2xl">code</span>
-              MYCODER
-            </Link>
-            <div className="hidden items-center gap-4 text-[13.5px] font-medium text-slate-600 lg:flex">
-              {homeNav.map((item) => (
-                item.path === '/search-jobs' ? (
-                  <JobCategoryNavItem key={item.label} item={item} active />
-                ) : (
-                  <Link key={item.label} className="nav-link-animate flex items-center gap-1.5" to={item.path}>
-                    <span className="material-symbols-outlined text-[17px]">{item.icon}</span>
-                    {item.label}
-                  </Link>
-                )
-              ))}
-            </div>
-          </div>
-          <div className="flex shrink-0 items-center gap-2 sm:gap-3">
-            {isAuthenticated ? (
-              <>
-                <Link to="/notifications" className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-100 text-slate-600 transition hover:bg-slate-200 sm:h-10 sm:w-10">
-                  <span className="material-symbols-outlined">notifications</span>
-                </Link>
-                <Link to="/messages" className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-100 text-slate-600 transition hover:bg-slate-200 sm:h-10 sm:w-10">
-                  <span className="material-symbols-outlined">chat</span>
-                </Link>
-                <div className="relative">
-                  <button
-                    type="button"
-                    onClick={() => setUserMenuOpen((prev) => !prev)}
-                    className="block h-9 w-9 overflow-hidden rounded-full border border-slate-200 bg-slate-200 transition hover:ring-2 hover:ring-blue-100"
-                  >
-                    <UserAvatar src={profileAvatar} name={profileName} className="h-full w-full" textClassName="text-xs" />
-                  </button>
-                  {userMenuOpen && (
-                    <div className="absolute right-0 top-12 z-[60] w-56 rounded-2xl border border-slate-200 bg-white p-2 shadow-[0_18px_40px_-24px_rgba(15,23,42,0.28)]">
-                      <div className="border-b border-slate-100 px-3 py-2">
-                        <p className="truncate text-sm font-bold text-slate-800">{profileName}</p>
-                        <p className="truncate text-xs text-slate-400">{profileHandle}</p>
-                      </div>
-                      <div className="pt-2">
-                        <Link to="/dashboard" onClick={() => setUserMenuOpen(false)} className="flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50">
-                          <span className="material-symbols-outlined text-[18px]">dashboard</span>
-                          Dashboard
-                        </Link>
-                        <Link to="/favorites" onClick={() => setUserMenuOpen(false)} className="flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50">
-                          <span className="material-symbols-outlined text-[18px]">favorite</span>
-                          Việc yêu thích
-                        </Link>
-                        <button type="button" onClick={handleLogout} className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm font-medium text-rose-600 transition hover:bg-rose-50">
-                          <span className="material-symbols-outlined text-[18px]">logout</span>
-                          Đăng xuất
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </>
-            ) : (
-              <>
-                <Link to="/login" className="inline-flex h-9 items-center justify-center rounded-full border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 transition hover:border-sky-200 hover:text-sky-800 sm:h-10 sm:px-4 sm:text-sm">
-                  Đăng nhập
-                </Link>
-                <Link to="/register" className="inline-flex h-9 items-center justify-center rounded-full bg-[#2b59ff] px-3 text-xs font-bold text-white transition hover:bg-[#1f4bf1] sm:h-10 sm:px-4 sm:text-sm">
-                  Đăng ký
-                </Link>
-              </>
-            )}
-          </div>
-        </div>
-      </nav>
+      <PublicHeader session={session} activeNav="/search-jobs" containerClassName="max-w-[1180px] px-4 sm:px-5" />
 
       <section className="search-hero-enter bg-gradient-to-r from-[#1d4ed8] via-[#2563eb] to-[#0ea5e9] py-4 shadow-sm sm:py-5">
         <div className="mx-auto flex w-full max-w-[1180px] flex-col gap-3 px-4 sm:px-5 lg:flex-row lg:items-center">

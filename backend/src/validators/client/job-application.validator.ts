@@ -19,6 +19,10 @@ export const applyJobValidator = z.object({
       .max(2000, { message: UserMessages.COVER_LETTER_MAX_LENGTH })
       .transform((value) => _.escape(value))
       .optional()
+    ,
+    full_name: z.string().trim().min(2).max(120).optional(),
+    email: z.string().trim().email().optional(),
+    phone: z.string().trim().min(6).max(30).optional()
   })
 })
 

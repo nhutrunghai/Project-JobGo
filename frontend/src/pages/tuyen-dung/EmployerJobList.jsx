@@ -11,6 +11,8 @@ import {
 } from '../../api/companyService.js'
 import { loadEmployerJobApplications, loadEmployerJobsList, updateEmployerJobStatus } from '../../data/apiClient.js'
 import { formatDate, statusOptions } from './employerData.js'
+import { formatCurrencyVi as formatMoney } from '../../utils/formatters.js'
+import { getPromotionTypeLabel } from '../../features/job-promotions/presentation.js'
 
 const defaultJobsPerPage = 10
 const pageSizeOptions = [5, 10, 20, 50]
@@ -98,19 +100,6 @@ function formatCompactTime(value) {
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return 'Chưa có cập nhật'
   return date.toLocaleDateString('vi-VN')
-}
-
-function formatMoney(value, currency = 'VND') {
-  return new Intl.NumberFormat('vi-VN', {
-    style: 'currency',
-    currency,
-    maximumFractionDigits: currency === 'VND' ? 0 : 2,
-  }).format(Number(value || 0))
-}
-
-function mapPromotionTypeLabel(value) {
-  if (value === 'homepage_featured') return 'Quảng cáo trang chủ'
-  return value || 'Quảng cáo'
 }
 
 function getPromotionBlockedReason(job, plans, plansLoading, plansError) {
@@ -233,19 +222,12 @@ function JobActionButton({ icon, label, className, ...props }) {
 }
 
 function PromotionPurchaseModal({ job, plans, isLoadingPlans, submitting, onClose, onSubmit }) {
-  const [selectedType, setSelectedType] = useState(plans[0]?.type || 'homepage_featured')
-  const [durationDays, setDurationDays] = useState('7')
-  const [priority, setPriority] = useState('')
-
-  useEffect(() => {
-    setSelectedType(plans[0]?.type || 'homepage_featured')
-    setDurationDays(String(plans[0]?.min_duration_days || 1))
-    setPriority('')
-  }, [plans])
+  const [selectedPlanId, setSelectedPlanId] = useState(plans[0]?._id || '')
+  const [durationDays, setDurationDays] = useState(String(plans[0]?.min_duration_days || 1))
 
   if (!job) return null
 
-  const selectedPlan = plans.find((plan) => plan.type === selectedType) || plans[0] || null
+  const selectedPlan = plans.find((plan) => plan._id === selectedPlanId) || plans[0] || null
   const minDays = Number(selectedPlan?.min_duration_days || 1)
   const maxDays = Number(selectedPlan?.max_duration_days || 90)
   const dailyPrice = Number(selectedPlan?.daily_price || 0)
@@ -275,29 +257,32 @@ function PromotionPurchaseModal({ job, plans, isLoadingPlans, submitting, onClos
             onSubmit={(event) => {
               event.preventDefault()
               onSubmit({
-                type: selectedType,
+                plan_id: selectedPlan?._id,
                 duration_days: Number(durationDays || minDays),
-                priority: priority === '' ? undefined : Number(priority),
               })
             }}
           >
             <label className="block">
               <span className="mb-2 block text-sm font-semibold text-slate-700">Gói quảng cáo</span>
               <select
-                value={selectedType}
-                onChange={(event) => setSelectedType(event.target.value)}
+                value={selectedPlan?._id || ''}
+                onChange={(event) => {
+                  const nextPlan = plans.find((plan) => plan._id === event.target.value)
+                  setSelectedPlanId(event.target.value)
+                  setDurationDays(String(nextPlan?.min_duration_days || 1))
+                }}
                 disabled={isLoadingPlans || submitting}
                 className="h-11 w-full rounded-lg border border-slate-200 bg-slate-50 px-4 text-[15px] font-semibold outline-none transition focus:border-blue-300 focus:bg-white focus:ring-2 focus:ring-blue-100"
               >
                 {plans.map((plan) => (
-                  <option key={plan.type} value={plan.type}>
-                    {mapPromotionTypeLabel(plan.type)}
+                  <option key={plan._id} value={plan._id}>
+                    {plan.name}
                   </option>
                 ))}
               </select>
             </label>
 
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div className="grid grid-cols-1 gap-4">
               <label className="block">
                 <span className="mb-2 block text-sm font-semibold text-slate-700">Số ngày quảng cáo</span>
                 <input
@@ -311,18 +296,6 @@ function PromotionPurchaseModal({ job, plans, isLoadingPlans, submitting, onClos
                 />
               </label>
 
-              <label className="block">
-                <span className="mb-2 block text-sm font-semibold text-slate-700">Độ ưu tiên</span>
-                <input
-                  type="number"
-                  min="0"
-                  value={priority}
-                  onChange={(event) => setPriority(event.target.value)}
-                  disabled={isLoadingPlans || submitting}
-                  placeholder={String(selectedPlan?.default_priority ?? 0)}
-                  className="h-11 w-full rounded-lg border border-slate-200 bg-slate-50 px-4 text-[15px] font-semibold outline-none transition focus:border-blue-300 focus:bg-white focus:ring-2 focus:ring-blue-100"
-                />
-              </label>
             </div>
 
             <div className="rounded-lg border border-blue-100 bg-blue-50 px-4 py-3 text-sm font-medium text-blue-700">
@@ -355,7 +328,7 @@ function PromotionPurchaseModal({ job, plans, isLoadingPlans, submitting, onClos
               <div className="mt-4 space-y-3">
                 <div className="rounded-lg border border-slate-200 bg-white px-4 py-3">
                   <p className="text-[12px] font-semibold text-slate-500">Loại gói</p>
-                  <p className="mt-1 text-sm font-semibold text-slate-800">{mapPromotionTypeLabel(selectedPlan.type)}</p>
+                  <p className="mt-1 text-sm font-semibold text-slate-800">{selectedPlan.name}</p>
                 </div>
                 <div className="rounded-lg border border-slate-200 bg-white px-4 py-3">
                   <p className="text-[12px] font-semibold text-slate-500">Đơn giá mỗi ngày</p>
@@ -1083,7 +1056,7 @@ export default function EmployerJobList() {
 
                         {activePromotion ? (
                           <div className="mt-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-[11px] font-semibold leading-4 text-emerald-700">
-                            Gói {mapPromotionTypeLabel(activePromotion.type)} đang chạy đến {formatDate(activePromotion.ends_at)}.
+                            Gói {getPromotionTypeLabel(activePromotion.type)} đang chạy đến {formatDate(activePromotion.ends_at)}.
                           </div>
                         ) : null}
 

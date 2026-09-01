@@ -198,10 +198,11 @@ export const getCompanyJobsValidator = z.object({
 
 export const searchPublicJobsValidator = z.object({
   query: z.object({
-    q: z.string().trim().min(2).max(200),
+    q: z.string().trim().min(2).max(200).optional(),
     location: z.string().trim().min(2).max(100).optional(),
     job_type: jobTypeSchema.optional(),
     level: jobLevelSchema.optional(),
+    category_id: z.string().trim().regex(/^[a-fA-F0-9]{24}$/).optional(),
     page: z.coerce.number().int().min(1).optional().default(1),
     limit: z.coerce.number().int().min(1).max(20).optional().default(10)
   })

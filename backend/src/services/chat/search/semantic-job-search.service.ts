@@ -7,8 +7,18 @@ import { SEARCH_CANDIDATE_LIMIT, SearchPublicJobsParams, SemanticSearchResult } 
 
 class SemanticJobSearchService {
   async search(params: SearchPublicJobsParams): Promise<SemanticSearchResult> {
+    const queryText = params.q?.trim()
+
+    if (!queryText) {
+      return {
+        hits: [],
+        embeddingElapsedMs: 0,
+        semanticSearchElapsedMs: 0
+      }
+    }
+
     const embeddingStartedAt = performance.now()
-    const queryVector = await generateLocalEmbedding(params.q)
+    const queryVector = await generateLocalEmbedding(queryText)
     const embeddingElapsedMs = performance.now() - embeddingStartedAt
 
     const semanticSearchStartedAt = performance.now()

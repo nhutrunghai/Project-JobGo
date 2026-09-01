@@ -76,57 +76,35 @@ export function getApiOrigin() {
   }
 }
 
-const AUTH_STORAGE_KEYS = ['token', 'accessToken', 'refreshToken', 'user', 'authUser', 'isLoggedIn']
+const LEGACY_AUTH_STORAGE_KEYS = ['token', 'accessToken', 'refreshToken', 'user', 'authUser', 'isLoggedIn']
+let accessToken = ''
 
-function getStoredValue(key) {
-  if (typeof window === 'undefined') return ''
-
-  return window.localStorage.getItem(key) || window.sessionStorage.getItem(key) || ''
-}
-
-function getPreferredAuthStorage() {
-  if (typeof window === 'undefined') return null
-
-  return window.localStorage.getItem('refreshToken') || window.localStorage.getItem('accessToken')
-    ? window.localStorage
-    : window.sessionStorage
-}
-
-export function getAccessToken() {
-  return getStoredValue('accessToken') || getStoredValue('token')
-}
-
-export function getRefreshToken() {
-  return getStoredValue('refreshToken')
-}
-
-export function clearStoredAuthSession() {
+function clearLegacyAuthStorage() {
   if (typeof window === 'undefined') return
-
-  AUTH_STORAGE_KEYS.forEach((key) => {
+  LEGACY_AUTH_STORAGE_KEYS.forEach((key) => {
     window.localStorage.removeItem(key)
     window.sessionStorage.removeItem(key)
   })
 }
 
-export function saveAuthTokens(authData, { remember } = {}) {
-  if (typeof window === 'undefined') return
+clearLegacyAuthStorage()
 
-  const storage = typeof remember === 'boolean' ? (remember ? window.localStorage : window.sessionStorage) : getPreferredAuthStorage()
-  const accessToken = authData?.AccessToken || authData?.accessToken || ''
-  const refreshToken = authData?.RefreshToken || authData?.refreshToken || ''
-  const user = {
-    id: authData?.id || authData?.userId || '',
-  }
+export function getAccessToken() {
+  return accessToken
+}
 
-  clearStoredAuthSession()
+export function hasAccessToken() {
+  return Boolean(accessToken)
+}
 
-  storage.setItem('accessToken', accessToken)
-  storage.setItem('refreshToken', refreshToken)
-  storage.setItem('token', accessToken)
-  storage.setItem('authUser', JSON.stringify(user))
-  storage.setItem('user', JSON.stringify(user))
-  storage.setItem('isLoggedIn', 'true')
+export function clearClientAuthSession() {
+  accessToken = ''
+  clearLegacyAuthStorage()
+}
+
+export function saveAccessToken(authData) {
+  accessToken = authData?.AccessToken || authData?.accessToken || ''
+  clearLegacyAuthStorage()
 }
 
 export function buildApiUrl(path, params) {

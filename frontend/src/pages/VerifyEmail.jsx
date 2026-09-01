@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { verifyEmail } from '../api/authService.js'
+import useCurrentUser from '../hooks/useCurrentUser.js'
 
 function VerifyEmail() {
   const navigate = useNavigate()
+  const { refreshSession } = useCurrentUser()
   const [searchParams] = useSearchParams()
   const didVerifyRef = useRef(false)
   const emailVerifyToken = searchParams.get('email_verify_token') || ''
@@ -23,6 +25,7 @@ function VerifyEmail() {
     async function handleVerifyEmail() {
       try {
         const result = await verifyEmail({ emailVerifyToken }, { remember: true })
+        if (result.accessToken) await refreshSession({ force: true })
         setStatus('success')
         setMessage(result.message || 'Xác minh email thành công.')
       } catch (error) {
@@ -32,7 +35,7 @@ function VerifyEmail() {
     }
 
     handleVerifyEmail()
-  }, [emailVerifyToken])
+  }, [emailVerifyToken, refreshSession])
 
   const isLoading = status === 'loading'
   const isSuccess = status === 'success'

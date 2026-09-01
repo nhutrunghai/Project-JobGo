@@ -2,11 +2,17 @@ import { Request, Response } from 'express'
 import { ParamsDictionary } from 'express-serve-static-core'
 import { StatusCodes } from 'http-status-codes'
 import { ObjectId } from 'mongodb'
+import sanitizeHtml from 'sanitize-html'
 import { JobModerationStatus, JobStatus } from '~/constants/enums'
 import UserMessages from '~/constants/messages/index'
 import { CompanyLocals, JobLocals } from '~/types/http/response.type'
 import Job from '~/models/schema/client/jobs.schema'
 import jobsService from '~/services/client/job.service'
+
+const sanitizeRichJobContent = (value: string) => sanitizeHtml(value, {
+  allowedTags: ['p', 'br', 'strong', 'em', 'u', 's', 'h2', 'h3', 'ul', 'ol', 'li', 'blockquote'],
+  allowedAttributes: {}
+})
 
 export const createCompanyJobController = async (
   req: Request<ParamsDictionary, unknown, Job>,
@@ -17,9 +23,9 @@ export const createCompanyJobController = async (
   const newJob = new Job({
     company_id: company?._id as ObjectId,
     title: req.body.title,
-    description: req.body.description,
-    requirements: req.body.requirements,
-    benefits: req.body.benefits,
+    description: sanitizeRichJobContent(req.body.description),
+    requirements: sanitizeRichJobContent(req.body.requirements),
+    benefits: sanitizeRichJobContent(req.body.benefits),
     salary: req.body.salary,
     location: req.body.location,
     job_type: req.body.job_type,
@@ -141,6 +147,10 @@ export const updateCompanyJobController = async (
     ...req.body,
     updated_at: new Date()
   }
+
+  if (typeof payload.description === 'string') payload.description = sanitizeRichJobContent(payload.description)
+  if (typeof payload.requirements === 'string') payload.requirements = sanitizeRichJobContent(payload.requirements)
+  if (typeof payload.benefits === 'string') payload.benefits = sanitizeRichJobContent(payload.benefits)
 
   const updatedJob = await jobsService.updateCompanyJob(job._id as ObjectId, payload)
 

@@ -1,4 +1,4 @@
-import { buildApiUrl, clearStoredAuthSession, createJsonHeaders } from '../config/api'
+import { buildApiUrl, clearClientAuthSession, createJsonHeaders } from '../config/api'
 import { refreshAccessToken } from './tokenRefresh.js'
 
 function getHeaders(headers = {}, options = {}) {
@@ -26,7 +26,14 @@ async function runRequest(method, path, { params, data, headers, auth = true } =
   return { response, payload }
 }
 
-async function request(method, path, { params, data, headers, auth = true, retryOnUnauthorized = true } = {}) {
+async function request(method, path, {
+  params,
+  data,
+  headers,
+  auth = true,
+  retryOnUnauthorized = true,
+  redirectOnUnauthorized = true,
+} = {}) {
   let { response, payload } = await runRequest(method, path, { params, data, headers, auth })
 
   if (response.status === 401 && auth && retryOnUnauthorized && path !== '/auth/refresh-token') {
@@ -34,8 +41,8 @@ async function request(method, path, { params, data, headers, auth = true, retry
       await refreshAccessToken()
       ;({ response, payload } = await runRequest(method, path, { params, data, headers, auth }))
     } catch (refreshError) {
-      clearStoredAuthSession()
-      if (typeof window !== 'undefined' && window.location.pathname !== '/login') {
+      clearClientAuthSession()
+      if (redirectOnUnauthorized && typeof window !== 'undefined' && window.location.pathname !== '/login') {
         window.location.assign(`/login?redirect=${encodeURIComponent(window.location.pathname + window.location.search)}`)
       }
       throw refreshError

@@ -23,7 +23,11 @@ function buildCategoryTree(categories = []) {
 }
 
 function categorySearchLink(category) {
-  return `/search-jobs?q=${encodeURIComponent(category.label)}`
+  const params = new URLSearchParams({
+    category_id: category.id,
+    category_name: category.label,
+  })
+  return `/search-jobs?${params.toString()}`
 }
 
 function CategoryTreeLink({ category, depth = 0 }) {
@@ -54,16 +58,6 @@ function JobCategoryDropdown({ categories, isLoading }) {
   const [activeRootId, setActiveRootId] = useState('')
   const activeRoot = categories.find((category) => category.id === activeRootId) || categories[0]
   const rootChildren = Array.isArray(activeRoot?.children) ? activeRoot.children : []
-
-  useEffect(() => {
-    if (!categories.length) {
-      setActiveRootId('')
-      return
-    }
-    if (!categories.some((category) => category.id === activeRootId)) {
-      setActiveRootId(categories[0].id)
-    }
-  }, [categories, activeRootId])
 
   return (
     <div className="invisible absolute left-0 top-full z-50 w-[820px] max-w-[calc(100vw-2rem)] translate-y-2 pt-4 opacity-0 transition-all duration-150 group-hover:visible group-hover:translate-y-0 group-hover:opacity-100">
@@ -149,12 +143,11 @@ function JobCategoryDropdown({ categories, isLoading }) {
 
 export default function JobCategoryNavItem({ item, active = false }) {
   const [jobCategories, setJobCategories] = useState([])
-  const [isLoadingCategories, setIsLoadingCategories] = useState(false)
+  const [isLoadingCategories, setIsLoadingCategories] = useState(true)
   const categoryTree = useMemo(() => buildCategoryTree(jobCategories), [jobCategories])
 
   useEffect(() => {
     let mounted = true
-    setIsLoadingCategories(true)
 
     getJobCategories()
       .then((categories) => {

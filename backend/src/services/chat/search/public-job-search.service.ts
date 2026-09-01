@@ -145,7 +145,7 @@ class PublicJobSearchService {
   normalizeSearchParams(params: SearchPublicJobsParams): SearchPublicJobsParams {
     return {
       ...params,
-      q: params.q.trim(),
+      q: params.q?.trim() || '',
       page: Math.max(1, params.page),
       limit: Math.max(1, params.limit)
     }

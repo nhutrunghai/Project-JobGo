@@ -4,6 +4,7 @@ import DashboardSidebar from '../../components/DashboardSidebar.jsx'
 import EmployerTopBar from '../../components/EmployerTopBar.jsx'
 import Toast from '../../components/Toast.jsx'
 import { loadEmployerApplicationDetail, updateEmployerApplicationStatus } from '../../data/apiClient.js'
+import { toSafeImageUrl, toSafeResourceUrl } from '../../utils/safeUrl.js'
 
 const statusOptions = [
   { value: 'reviewing', label: 'Đang xem xét' },
@@ -102,6 +103,7 @@ export default function EmployerCandidateDetail() {
   }, [applicationId])
 
   const candidateName = getCandidateName(detail)
+  const candidateAvatar = toSafeImageUrl(detail?.candidate?.avatar)
   const availableStatusOptions = useMemo(() => {
     if (!detail) return []
     const allowed = allowedTransitions[detail.status] || []
@@ -171,9 +173,9 @@ export default function EmployerCandidateDetail() {
               <article className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
                 <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                   <div className="flex min-w-0 items-start gap-4">
-                    {detail.candidate?.avatar ? (
+                    {candidateAvatar ? (
                       <img
-                        src={detail.candidate.avatar}
+                        src={candidateAvatar}
                         alt={candidateName}
                         className="h-14 w-14 rounded-lg object-cover ring-1 ring-slate-200"
                       />
@@ -338,7 +340,7 @@ export default function EmployerCandidateDetail() {
               </div>
               <div className="flex items-center gap-2">
                 <a
-                  href={detail.resumeSnapshot.cv_url}
+                  href={toSafeResourceUrl(detail.resumeSnapshot.cv_url) || undefined}
                   target="_blank"
                   rel="noreferrer"
                   className="inline-flex h-9 items-center justify-center rounded-lg border border-slate-200 px-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
@@ -356,7 +358,8 @@ export default function EmployerCandidateDetail() {
             </div>
             <iframe
               title={`Preview CV ${candidateName}`}
-              src={detail.resumeSnapshot.cv_url}
+              src={toSafeResourceUrl(detail.resumeSnapshot.cv_url) || undefined}
+              sandbox="allow-same-origin allow-downloads"
               className="min-h-0 flex-1 border-0 bg-slate-100"
             />
           </div>

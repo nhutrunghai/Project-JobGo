@@ -5,7 +5,6 @@ import {
   deleteAdminJobPromotionController,
   getAdminJobPromotionDetailController,
   getAdminJobPromotionsController,
-  reorderAdminJobPromotionsController,
   updateAdminJobPromotionController
 } from '~/controllers/admin/job-promotion.controller.js'
 import { adminAuthMiddleware } from '~/middlewares/admin/auth.middleware.js'
@@ -17,7 +16,6 @@ import {
   deleteAdminJobPromotionValidator,
   getAdminJobPromotionDetailValidator,
   getAdminJobPromotionsValidator,
-  reorderAdminJobPromotionsValidator,
   updateAdminJobPromotionValidator
 } from '~/validators/admin/job-promotion.validator.js'
 
@@ -38,15 +36,6 @@ adminJobPromotionRouter.post(
   adminLimiter,
   validate(createAdminJobPromotionValidator),
   createAdminJobPromotionController
-)
-
-adminJobPromotionRouter.patch(
-  '/reorder',
-  adminAuthMiddleware,
-  authorizeAdmin([UserRole.ADMIN]),
-  adminLimiter,
-  validate(reorderAdminJobPromotionsValidator),
-  reorderAdminJobPromotionsController
 )
 
 adminJobPromotionRouter.get(

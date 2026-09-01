@@ -7,4 +7,5 @@ export default interface UserInfo extends JwtPayload {
   role: UserRole
   typeJwt: string
   vfd: boolean
+  remember?: boolean
 }

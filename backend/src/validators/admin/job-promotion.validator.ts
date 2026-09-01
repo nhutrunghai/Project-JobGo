@@ -12,6 +12,7 @@ const objectIdSchema = (message: string) =>
 
 const jobPromotionTypeValues = [JobPromotionType.HOMEPAGE_FEATURED] as const
 const jobPromotionStatusValues = [
+  JobPromotionStatus.SCHEDULED,
   JobPromotionStatus.ACTIVE,
   JobPromotionStatus.EXPIRED,
   JobPromotionStatus.CANCELLED
@@ -38,7 +39,6 @@ export const getAdminJobPromotionsValidator = z.object({
     limit: z.coerce.number().int().min(1).max(100).optional().default(10)
   })
 })
-
 export const getAdminJobPromotionDetailValidator = z.object({
   params: z.object({
     promotionId: objectIdSchema(UserMessages.JOB_PROMOTION_ID_INVALID)
@@ -49,13 +49,9 @@ export const createAdminJobPromotionValidator = z
   .object({
     body: z.object({
       jobId: objectIdSchema(UserMessages.JOB_ID_INVALID),
-      type: z.enum(jobPromotionTypeValues).optional().default(JobPromotionType.HOMEPAGE_FEATURED),
-      status: z.enum(jobPromotionStatusValues).optional().default(JobPromotionStatus.ACTIVE),
+      plan_id: objectIdSchema('Mã gói quảng cáo không hợp lệ.'),
       starts_at: z.string().datetime(),
-      ends_at: z.string().datetime(),
-      priority: z.coerce.number().int().min(0).max(100000).optional().default(0),
-      amount_paid: z.coerce.number().min(0).optional().default(0),
-      currency: z.enum(['VND', 'USD']).optional().default('VND')
+      ends_at: z.string().datetime()
     })
   })
   .superRefine((data, ctx) => dateRangeRefine(data.body, ctx))
@@ -67,13 +63,10 @@ export const updateAdminJobPromotionValidator = z
     }),
     body: z
       .object({
-        type: z.enum(jobPromotionTypeValues).optional(),
-        status: z.enum(jobPromotionStatusValues).optional(),
+        plan_id: objectIdSchema('Mã gói quảng cáo không hợp lệ.').optional(),
+        status: z.literal(JobPromotionStatus.CANCELLED).optional(),
         starts_at: z.string().datetime().optional(),
-        ends_at: z.string().datetime().optional(),
-        priority: z.coerce.number().int().min(0).max(100000).optional(),
-        amount_paid: z.coerce.number().min(0).optional(),
-        currency: z.enum(['VND', 'USD']).optional()
+        ends_at: z.string().datetime().optional()
       })
       .refine((value) => Object.keys(value).length > 0, {
         message: UserMessages.INVALID_DATA
@@ -84,19 +77,5 @@ export const updateAdminJobPromotionValidator = z
 export const deleteAdminJobPromotionValidator = z.object({
   params: z.object({
     promotionId: objectIdSchema(UserMessages.JOB_PROMOTION_ID_INVALID)
-  })
-})
-
-export const reorderAdminJobPromotionsValidator = z.object({
-  body: z.object({
-    items: z
-      .array(
-        z.object({
-          promotionId: objectIdSchema(UserMessages.JOB_PROMOTION_ID_INVALID),
-          priority: z.coerce.number().int().min(0).max(100000)
-        })
-      )
-      .min(1)
-      .max(100)
   })
 })

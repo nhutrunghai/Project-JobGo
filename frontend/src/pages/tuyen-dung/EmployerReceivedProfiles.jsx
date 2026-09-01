@@ -4,6 +4,7 @@ import DashboardSidebar from '../../components/DashboardSidebar.jsx'
 import EmployerTopBar from '../../components/EmployerTopBar.jsx'
 import Toast from '../../components/Toast.jsx'
 import { loadEmployerReceivedApplications } from '../../data/apiClient.js'
+import { toSafeResourceUrl } from '../../utils/safeUrl.js'
 
 const applicationStatusOptions = [
   { value: '', label: 'Tất cả trạng thái' },
@@ -186,47 +187,47 @@ export default function EmployerReceivedProfiles() {
           ) : (
             <div className="divide-y divide-slate-100">
               {applications.map((candidate) => (
-                <article key={candidate.applicationId} className="grid grid-cols-1 gap-3 px-4 py-4 transition hover:bg-slate-50 lg:grid-cols-[minmax(0,1fr)_220px_150px] lg:items-center lg:px-5">
+                <article key={candidate.applicationId} className="received-profile-row grid grid-cols-1 gap-3 px-4 py-3 transition hover:bg-slate-50 sm:px-5 lg:grid-cols-[minmax(0,1fr)_230px_112px] lg:items-center lg:gap-5 lg:px-6">
                   <div className="flex min-w-0 items-start gap-3">
-                    <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-sm font-bold ${candidate.tone}`}>
+                    <div className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-xl text-sm font-bold ${candidate.tone}`}>
                       {candidate.initials}
                     </div>
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
-                        <h2 className="truncate text-base font-extrabold text-slate-900">{candidate.name}</h2>
-                        <span className={`rounded-lg border px-2.5 py-1 text-xs font-semibold ${statusTone[candidate.status] || 'border-slate-200 bg-slate-100 text-slate-600'}`}>
+                        <h2 className="truncate text-[15px] font-bold leading-5 text-slate-900">{candidate.name}</h2>
+                        <span className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold leading-4 ${statusTone[candidate.status] || 'border-slate-200 bg-slate-100 text-slate-600'}`}>
                           {candidate.statusLabel}
                         </span>
                       </div>
-                      <p className="mt-1 truncate text-sm text-slate-500">{candidate.email || 'Chưa có email'} {candidate.phone ? `• ${candidate.phone}` : ''}</p>
-                      <p className="mt-1 text-sm font-semibold text-slate-700">{candidate.jobTitle}</p>
-                      <p className="mt-1 text-xs text-slate-400">
+                      <p className="mt-0.5 truncate text-[13px] text-slate-500">{candidate.email || 'Chưa có email'} {candidate.phone ? `• ${candidate.phone}` : ''}</p>
+                      <p className="mt-0.5 text-[13px] font-semibold text-slate-700">{candidate.jobTitle}</p>
+                      <p className="mt-0.5 text-[11px] text-slate-400">
                         Nộp: {formatDateTime(candidate.appliedAt)} • {candidate.appliedTimeLabel}
                       </p>
                     </div>
                   </div>
 
-                  <div className="flex flex-wrap gap-2">
-                    <span className="rounded-lg bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700">{candidate.jobLevel}</span>
-                    <span className="rounded-lg bg-cyan-50 px-2.5 py-1 text-xs font-semibold text-cyan-700">{candidate.jobType}</span>
+                  <div className="flex flex-wrap content-center gap-2 lg:justify-start">
+                    <span className="rounded-full bg-blue-50 px-3 py-1.5 text-[11px] font-semibold text-blue-700">{candidate.jobLevel}</span>
+                    <span className="rounded-full bg-cyan-50 px-3 py-1.5 text-[11px] font-semibold text-cyan-700">{candidate.jobType}</span>
                     {candidate.jobLocation && (
-                      <span className="rounded-lg bg-rose-50 px-2.5 py-1 text-xs font-semibold text-rose-700">{candidate.jobLocation}</span>
+                      <span className="rounded-full bg-rose-50 px-3 py-1.5 text-[11px] font-semibold text-rose-700">{candidate.jobLocation}</span>
                     )}
                   </div>
 
-                  <div className="grid grid-cols-1 gap-2 sm:w-full sm:grid-cols-2 lg:w-auto lg:min-w-[150px]">
+                  <div className="flex w-full items-center gap-2 sm:w-auto lg:justify-end">
                     {candidate.cvUrl && (
                       <button
                         type="button"
                         onClick={() => setPreviewCv(candidate)}
-                        className="inline-flex h-10 items-center justify-center rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
+                        className="inline-flex h-10 min-w-14 items-center justify-center rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
                       >
                         CV
                       </button>
                     )}
                     <Link
                       to={`/employer-received-cv/${candidate.applicationId}`}
-                      className="inline-flex h-10 items-center justify-center rounded-lg bg-blue-600 px-3 text-sm font-semibold text-white transition hover:bg-blue-700"
+                      className="inline-flex h-10 min-w-[76px] items-center justify-center rounded-lg bg-blue-600 px-3 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-200"
                     >
                       Chi tiết
                     </Link>
@@ -273,7 +274,7 @@ export default function EmployerReceivedProfiles() {
               </div>
               <div className="flex w-full items-center gap-2 sm:w-auto">
                 <a
-                  href={previewCv.cvUrl}
+                  href={toSafeResourceUrl(previewCv.cvUrl) || undefined}
                   target="_blank"
                   rel="noreferrer"
                   className="inline-flex h-9 flex-1 items-center justify-center rounded-lg border border-slate-200 px-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 sm:flex-none"
@@ -291,7 +292,8 @@ export default function EmployerReceivedProfiles() {
             </div>
             <iframe
               title={`Preview CV ${previewCv.name}`}
-              src={previewCv.cvUrl}
+              src={toSafeResourceUrl(previewCv.cvUrl) || undefined}
+              sandbox="allow-same-origin allow-downloads"
               className="min-h-0 flex-1 border-0 bg-slate-100"
             />
           </div>

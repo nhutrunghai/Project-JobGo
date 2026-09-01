@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import AdminLayout from '../../components/AdminLayout.jsx'
 import Toast from '../../components/Toast.jsx'
 import {
@@ -8,24 +8,7 @@ import {
   testAdminSePayConnection,
   updateAdminSePayConfig,
 } from '../../api/adminService.js'
-
-function formatDateTime(value) {
-  if (!value) return 'Chưa có'
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return 'Chưa có'
-  return new Intl.DateTimeFormat('vi-VN', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  }).format(date)
-}
-
-function compactId(value) {
-  if (!value) return 'Chưa có'
-  return `${String(value).slice(0, 8)}...${String(value).slice(-6)}`
-}
+import { compactId, formatDateTimeVi as formatDateTime } from '../../utils/formatters.js'
 
 function StatCard({ label, value, tone = 'text-slate-950' }) {
   return (
@@ -58,27 +41,27 @@ export default function AdminSePayConfig() {
   const [testing, setTesting] = useState(false)
   const [toast, setToast] = useState(null)
 
-  const syncConfigForm = (data) => {
+  const syncConfigForm = useCallback((data) => {
     setConfigForm({
       bank_account_id: data?.bank_account_id || '',
       bank_short_name: data?.bank_short_name || '',
       bank_account_number: data?.bank_account_number || '',
       bank_account_holder_name: data?.bank_account_holder_name || '',
     })
-  }
+  }, [])
 
-  const loadConfig = async () => {
+  const loadConfig = useCallback(async () => {
     const data = await getAdminSePayConfig()
     setConfig(data)
     syncConfigForm(data)
     return data
-  }
+  }, [syncConfigForm])
 
-  const loadDiagnostics = async (limit = recentLimit) => {
+  const loadDiagnostics = useCallback(async (limit = '10') => {
     const data = await getAdminSePayDiagnostics({ recentLimit: Number(limit || 10) })
     setDiagnostics(data)
     return data
-  }
+  }, [])
 
   useEffect(() => {
     let active = true
@@ -96,7 +79,7 @@ export default function AdminSePayConfig() {
     return () => {
       active = false
     }
-  }, [])
+  }, [loadConfig, loadDiagnostics])
 
   const stats = useMemo(() => {
     const summary = diagnostics?.order_summary?.by_status || {}

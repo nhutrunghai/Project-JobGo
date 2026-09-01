@@ -55,7 +55,7 @@ Jobs context:
 ${buildJobsContext(jobs)}
 
 Hay tra ve JSON hop le theo schema.
-- answer: cau tra loi tieng Viet cho user, neu 2-3 job phu hop nhat, ly do khop, diem con thieu/rui ro va goi y cai thien CV neu can.
+- answer: cau tra loi tieng Viet cho user. Neu user yeu cau so luong cu the, hay neu toi da dung so luong do neu Jobs context co du. Neu khong, neu cac job phu hop nhat, ly do khop, diem con thieu/rui ro va goi y cai thien CV neu can.
 - selected_job_ids: danh sach job_id cua dung cac job duoc nhac/goi y trong answer.
 - Neu du lieu CV thieu, phai noi ro muc danh gia chi la tuong doi.
 - Khong dua job_id vao selected_job_ids neu job do khong duoc nhac trong answer.

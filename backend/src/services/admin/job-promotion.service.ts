@@ -4,6 +4,7 @@ import { StatusCodes } from 'http-status-codes'
 import databaseService from '~/configs/database.config.js'
 import {
   JobModerationStatus,
+  JobPromotionSource,
   JobPromotionStatus,
   JobPromotionType,
   JobStatus
@@ -11,6 +12,7 @@ import {
 import UserMessages from '~/constants/messages/index.js'
 import { AppError } from '~/errors/app-error.js'
 import JobPromotion from '~/models/schema/client/jobPromotions.schema.js'
+import JobPromotionPlan from '~/models/schema/client/jobPromotionPlans.schema.js'
 
 type JobPromotionListItem = JobPromotion & {
   job: {
@@ -50,6 +52,7 @@ class AdminJobPromotionService {
     page: number
     limit: number
   }) {
+    await this.syncPromotionStatuses()
     const match: {
       type?: JobPromotionType
       status?: JobPromotionStatus
@@ -146,6 +149,7 @@ class AdminJobPromotionService {
   }
 
   async getPromotionByIdOrThrow(promotionId: ObjectId) {
+    await this.syncPromotionStatuses()
     const promotion = await databaseService.jobPromotions
       .aggregate<JobPromotionListItem>([
         { $match: { _id: promotionId } },
@@ -181,26 +185,25 @@ class AdminJobPromotionService {
     return promotion
   }
 
-  async createPromotion({
-    jobId,
-    type,
-    status,
-    startsAt,
-    endsAt,
-    priority,
-    amountPaid,
-    currency
-  }: {
+  async createPromotion({ jobId, planId, startsAt, endsAt }: {
     jobId: ObjectId
-    type: JobPromotionType
-    status?: JobPromotionStatus
+    planId: ObjectId
     startsAt: Date
     endsAt: Date
-    priority: number
-    amountPaid: number
-    currency: 'VND' | 'USD'
   }) {
     this.assertValidDateRange(startsAt, endsAt)
+
+    const plan = await databaseService.jobPromotionPlans.findOne({ _id: planId, is_active: true })
+    if (!plan) {
+      throw new AppError({ statusCode: StatusCodes.NOT_FOUND, message: 'Không tìm thấy gói quảng cáo đang hoạt động.' })
+    }
+    const durationDays = Math.ceil((endsAt.getTime() - startsAt.getTime()) / 86400000)
+    if (durationDays < plan.min_duration_days || durationDays > plan.max_duration_days) {
+      throw new AppError({
+        statusCode: StatusCodes.BAD_REQUEST,
+        message: `Thời lượng gói phải từ ${plan.min_duration_days} đến ${plan.max_duration_days} ngày.`
+      })
+    }
 
     const job = await databaseService.jobs.findOne({ _id: jobId })
 
@@ -225,7 +228,7 @@ class AdminJobPromotionService {
 
     await this.assertNoOverlappingPromotion({
       jobId,
-      type,
+      type: plan.type,
       startsAt,
       endsAt
     })
@@ -233,13 +236,16 @@ class AdminJobPromotionService {
     const promotion = new JobPromotion({
       job_id: jobId,
       company_id: job.company_id,
-      type,
-      status: status || JobPromotionStatus.ACTIVE,
+      plan_id: plan._id,
+      plan_snapshot: this.getPlanSnapshot(plan),
+      source: JobPromotionSource.ADMIN_GRANT,
+      type: plan.type,
+      status: startsAt > new Date() ? JobPromotionStatus.SCHEDULED : JobPromotionStatus.ACTIVE,
       starts_at: startsAt,
       ends_at: endsAt,
-      priority,
-      amount_paid: amountPaid,
-      currency
+      priority: plan.default_priority,
+      amount_paid: 0,
+      currency: plan.currency
     })
 
     const result = await databaseService.jobPromotions.insertOne(promotion)
@@ -249,22 +255,16 @@ class AdminJobPromotionService {
 
   async updatePromotion({
     promotionId,
-    type,
+    planId,
     status,
     startsAt,
-    endsAt,
-    priority,
-    amountPaid,
-    currency
+    endsAt
   }: {
     promotionId: ObjectId
-    type?: JobPromotionType
+    planId?: ObjectId
     status?: JobPromotionStatus
     startsAt?: Date
     endsAt?: Date
-    priority?: number
-    amountPaid?: number
-    currency?: 'VND' | 'USD'
   }) {
     const current = await databaseService.jobPromotions.findOne({ _id: promotionId })
 
@@ -275,12 +275,53 @@ class AdminJobPromotionService {
       })
     }
 
-    const nextType = type || current.type
+    const isChangingPlan = Boolean(planId && (!current.plan_id || !planId.equals(current.plan_id)))
+    const plan = isChangingPlan
+      ? await databaseService.jobPromotionPlans.findOne({ _id: planId, is_active: true })
+      : null
+    if (isChangingPlan && !plan) {
+      throw new AppError({ statusCode: StatusCodes.NOT_FOUND, message: 'Không tìm thấy gói quảng cáo đang hoạt động.' })
+    }
+
+    if (
+      (current.source === JobPromotionSource.EMPLOYER_PURCHASE || current.amount_paid > 0) &&
+      (isChangingPlan || startsAt || endsAt)
+    ) {
+      throw new AppError({
+        statusCode: StatusCodes.CONFLICT,
+        message: 'Không thể thay đổi gói hoặc thời gian của lượt do nhà tuyển dụng đã thanh toán.'
+      })
+    }
+    const nextType = plan?.type || current.type
     const nextStartsAt = startsAt || current.starts_at
     const nextEndsAt = endsAt || current.ends_at
     this.assertValidDateRange(nextStartsAt, nextEndsAt)
+    const now = new Date()
+    const derivedStatus = (
+      status === JobPromotionStatus.CANCELLED || (current.status === JobPromotionStatus.CANCELLED && status === undefined)
+        ? JobPromotionStatus.CANCELLED
+        : nextEndsAt <= now
+          ? JobPromotionStatus.EXPIRED
+          : nextStartsAt > now
+            ? JobPromotionStatus.SCHEDULED
+            : JobPromotionStatus.ACTIVE
+    )
 
-    if (status !== JobPromotionStatus.CANCELLED) {
+    const durationDays = Math.ceil((nextEndsAt.getTime() - nextStartsAt.getTime()) / 86400000)
+    const minDurationDays = plan?.min_duration_days ?? current.plan_snapshot?.min_duration_days
+    const maxDurationDays = plan?.max_duration_days ?? current.plan_snapshot?.max_duration_days
+    if (
+      minDurationDays !== undefined &&
+      maxDurationDays !== undefined &&
+      (durationDays < minDurationDays || durationDays > maxDurationDays)
+    ) {
+      throw new AppError({
+        statusCode: StatusCodes.BAD_REQUEST,
+        message: `Thời lượng gói phải từ ${minDurationDays} đến ${maxDurationDays} ngày.`
+      })
+    }
+
+    if (derivedStatus !== JobPromotionStatus.CANCELLED) {
       await this.assertNoOverlappingPromotion({
         jobId: current.job_id,
         type: nextType,
@@ -294,13 +335,16 @@ class AdminJobPromotionService {
       { _id: promotionId },
       {
         $set: {
-          ...(type ? { type } : {}),
-          ...(status ? { status } : {}),
+          ...(plan ? {
+            plan_id: plan._id,
+            plan_snapshot: this.getPlanSnapshot(plan),
+            type: plan.type,
+            priority: plan.default_priority,
+            currency: plan.currency
+          } : {}),
+          status: derivedStatus,
           ...(startsAt ? { starts_at: startsAt } : {}),
           ...(endsAt ? { ends_at: endsAt } : {}),
-          ...(priority !== undefined ? { priority } : {}),
-          ...(amountPaid !== undefined ? { amount_paid: amountPaid } : {}),
-          ...(currency ? { currency } : {}),
           updated_at: new Date()
         }
       },
@@ -320,46 +364,16 @@ class AdminJobPromotionService {
       })
     }
 
-    await databaseService.jobPromotions.deleteOne({ _id: promotionId })
-
-    return promotion
-  }
-
-  async reorderPromotions(items: Array<{ promotionId: ObjectId; priority: number }>) {
-    const promotionIds = items.map((item) => item.promotionId)
-    const found = await databaseService.jobPromotions
-      .find({ _id: { $in: promotionIds } }, { projection: { _id: 1 } })
-      .toArray()
-
-    if (found.length !== promotionIds.length) {
+    if (promotion.source === JobPromotionSource.EMPLOYER_PURCHASE || promotion.amount_paid > 0) {
       throw new AppError({
-        statusCode: StatusCodes.NOT_FOUND,
-        message: UserMessages.JOB_PROMOTION_NOT_FOUND
+        statusCode: StatusCodes.CONFLICT,
+        message: 'Không thể xóa lượt quảng cáo đã thanh toán. Hãy hủy để giữ lịch sử giao dịch.'
       })
     }
 
-    const now = new Date()
+    await databaseService.jobPromotions.deleteOne({ _id: promotionId })
 
-    await databaseService.withTransaction(async (session) => {
-      await Promise.all(
-        items.map((item) =>
-          databaseService.jobPromotions.updateOne(
-            { _id: item.promotionId },
-            {
-              $set: {
-                priority: item.priority,
-                updated_at: now
-              }
-            },
-            { session }
-          )
-        )
-      )
-    })
-
-    return {
-      modified_count: items.length
-    }
+    return promotion
   }
 
   private assertValidDateRange(startsAt: Date, endsAt: Date) {
@@ -368,6 +382,31 @@ class AdminJobPromotionService {
         statusCode: StatusCodes.BAD_REQUEST,
         message: UserMessages.JOB_PROMOTION_DATE_INVALID
       })
+    }
+  }
+
+  async syncPromotionStatuses() {
+    const now = new Date()
+    await databaseService.jobPromotions.updateMany(
+      { status: { $in: [JobPromotionStatus.ACTIVE, JobPromotionStatus.SCHEDULED] }, ends_at: { $lte: now } },
+      { $set: { status: JobPromotionStatus.EXPIRED, updated_at: now } }
+    )
+    await databaseService.jobPromotions.updateMany(
+      { status: JobPromotionStatus.SCHEDULED, starts_at: { $lte: now }, ends_at: { $gt: now } },
+      { $set: { status: JobPromotionStatus.ACTIVE, updated_at: now } }
+    )
+  }
+
+  private getPlanSnapshot(plan: JobPromotionPlan) {
+    return {
+      code: plan.code,
+      name: plan.name,
+      type: plan.type,
+      daily_price: plan.daily_price,
+      currency: plan.currency,
+      min_duration_days: plan.min_duration_days,
+      max_duration_days: plan.max_duration_days,
+      default_priority: plan.default_priority
     }
   }
 
@@ -388,7 +427,7 @@ class AdminJobPromotionService {
       ...(excludePromotionId ? { _id: { $ne: excludePromotionId } } : {}),
       job_id: jobId,
       type,
-      status: JobPromotionStatus.ACTIVE,
+      status: { $in: [JobPromotionStatus.ACTIVE, JobPromotionStatus.SCHEDULED] },
       starts_at: { $lt: endsAt },
       ends_at: { $gt: startsAt }
     })
@@ -407,6 +446,9 @@ class AdminJobPromotionService {
         _id: 1,
         job_id: 1,
         company_id: 1,
+        plan_id: 1,
+        plan_snapshot: 1,
+        source: 1,
         type: 1,
         status: 1,
         starts_at: 1,

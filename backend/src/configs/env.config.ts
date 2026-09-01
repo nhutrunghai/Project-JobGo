@@ -34,8 +34,7 @@ const envSchema = z.object({
   DB_NOTIFICATION_NAME: z.string().min(1, { message: 'DB_NOTIFICATION_NAME không được rỗng' }),
   DB_ADMIN_AUDIT_LOG_NAME: z.string().min(1, { message: 'DB_ADMIN_AUDIT_LOG_NAME không được rỗng' }),
   DB_SYSTEM_SETTING_NAME: z.string().min(1, { message: 'DB_SYSTEM_SETTING_NAME không được rỗng' }),
-  PROMOTION_DAILY_PRICE: z.coerce.number().int().min(0).default(50000),
-  PROMOTION_DEFAULT_PRIORITY: z.coerce.number().int().min(0).default(100),
+  DB_JOB_PROMOTION_PLAN_NAME: z.string().min(1).default('job_promotion_plans'),
   DB_FAVORITE_JOB_NAME: z.string().min(1, { message: 'DB_FAVORITE_JOB_NAME không được rỗng' }),
   DB_RESUME_NAME: z.string().min(1, { message: 'DB_RESUME_NAME không được rỗng' }),
   DB_JOB_APPLICATION_NAME: z.string().min(1, { message: 'DB_JOB_APPLICATION_NAME không được rỗng' }),
@@ -48,6 +47,9 @@ const envSchema = z.object({
   SECRET_REFRESH_TOKEN: z.string().min(32, { message: 'Refresh Token Secret quá ngắn' }),
   ExpiresIn_ACCESS_TOKEN: z.string().min(1, { message: 'ExpiresIn_ACCESS_TOKEN không được rỗng' }),
   ExpiresIn_REFRESH_TOKEN: z.string().min(1, { message: 'ExpiresIn_REFRESH_TOKEN không được rỗng' }),
+  AUTH_REFRESH_COOKIE_NAME: z.string().min(1).default('jobgo_refresh'),
+  AUTH_COOKIE_SECURE: z.preprocess((value) => value === 'true' || value === true, z.boolean()).default(false),
+  AUTH_COOKIE_SAME_SITE: z.enum(['lax', 'strict', 'none']).default('lax'),
   // Provider - Resend
   RESEND_API_KEY: z.string().min(1, { message: 'Không tồn tại Resend API key' }),
   MAIL_FROM_ADDRESS: z.string().min(1, { message: 'Không tồn tại domain mail' }),
@@ -90,7 +92,7 @@ const envSchema = z.object({
   OPENAI_API_TIMEOUT_MS: z.coerce.number().min(1000).default(30000),
   DB_CHAT_SESSION_NAME: z.string().min(1, { message: 'DB_CHAT_SESSION_NAME không được rỗng' }),
   // Admin session
-  ADMIN_SESSION_COOKIE_NAME: z.string().min(1).default('admin_sid'),
+  ADMIN_SESSION_COOKIE_NAME: z.string().min(1).default('admin_sid') ,
   ADMIN_SESSION_PREFIX: z.string().min(1).default('admin:sessions'),
   ADMIN_SESSION_TTL: z.coerce
     .number()

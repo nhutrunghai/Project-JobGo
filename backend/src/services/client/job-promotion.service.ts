@@ -1,9 +1,9 @@
 import { ObjectId } from 'mongodb'
 import { StatusCodes } from 'http-status-codes'
 import databaseService from '~/configs/database.config.js'
-import env from '~/configs/env.config.js'
 import {
   JobModerationStatus,
+  JobPromotionSource,
   JobPromotionStatus,
   JobPromotionType,
   JobStatus,
@@ -16,6 +16,7 @@ import {
 import UserMessages from '~/constants/messages/index.js'
 import { AppError } from '~/errors/app-error.js'
 import JobPromotion from '~/models/schema/client/jobPromotions.schema.js'
+import JobPromotionPlan from '~/models/schema/client/jobPromotionPlans.schema.js'
 import WalletTransaction from '~/models/schema/client/walletTransactions.schema.js'
 
 type CompanyPromotionListItem = JobPromotion & {
@@ -33,44 +34,41 @@ type CompanyPromotionListItem = JobPromotion & {
 }
 
 class CompanyJobPromotionService {
-  getPlans() {
-    return {
-      plans: [
-        {
-          type: JobPromotionType.HOMEPAGE_FEATURED,
-          name: 'Homepage featured',
-          daily_price: env.PROMOTION_DAILY_PRICE,
-          currency: 'VND',
-          min_duration_days: 1,
-          max_duration_days: 90,
-          default_priority: env.PROMOTION_DEFAULT_PRIORITY
-        }
-      ]
-    }
+  async getPlans() {
+    const plans = await databaseService.jobPromotionPlans.find({ is_active: true }).sort({ sort_order: 1 }).toArray()
+    return { plans }
   }
 
-  calculateAmount(durationDays: number) {
-    return durationDays * env.PROMOTION_DAILY_PRICE
+  calculateAmount(plan: JobPromotionPlan, durationDays: number) {
+    return durationDays * plan.daily_price
   }
 
   async purchasePromotion({
     userId,
     companyId,
     jobId,
-    type,
-    durationDays,
-    priority
+    planId,
+    durationDays
   }: {
     userId: ObjectId
     companyId: ObjectId
     jobId: ObjectId
-    type: JobPromotionType
+    planId: ObjectId
     durationDays: number
-    priority?: number
   }) {
+    const plan = await databaseService.jobPromotionPlans.findOne({ _id: planId, is_active: true })
+    if (!plan) {
+      throw new AppError({ statusCode: StatusCodes.NOT_FOUND, message: 'Không tìm thấy gói quảng cáo đang hoạt động.' })
+    }
+    if (durationDays < plan.min_duration_days || durationDays > plan.max_duration_days) {
+      throw new AppError({
+        statusCode: StatusCodes.BAD_REQUEST,
+        message: `Thời lượng gói phải từ ${plan.min_duration_days} đến ${plan.max_duration_days} ngày.`
+      })
+    }
     const startsAt = new Date()
     const endsAt = new Date(startsAt.getTime() + durationDays * 24 * 60 * 60 * 1000)
-    const amount = this.calculateAmount(durationDays)
+    const amount = this.calculateAmount(plan, durationDays)
 
     const job = await databaseService.jobs.findOne({
       _id: jobId,
@@ -98,7 +96,7 @@ class CompanyJobPromotionService {
 
     await this.assertNoOverlappingPromotion({
       jobId,
-      type,
+      type: plan.type,
       startsAt,
       endsAt
     })
@@ -116,6 +114,13 @@ class CompanyJobPromotionService {
           throw new AppError({
             statusCode: StatusCodes.FORBIDDEN,
             message: UserMessages.WALLET_LOCKED
+          })
+        }
+
+        if (wallet.currency !== plan.currency) {
+          throw new AppError({
+            statusCode: StatusCodes.BAD_REQUEST,
+            message: `Ví ${wallet.currency} không thể thanh toán gói có đơn vị ${plan.currency}.`
           })
         }
 
@@ -157,13 +162,16 @@ class CompanyJobPromotionService {
         const promotion = new JobPromotion({
           job_id: jobId,
           company_id: companyId,
-          type,
+          plan_id: plan._id,
+          plan_snapshot: this.getPlanSnapshot(plan),
+          source: JobPromotionSource.EMPLOYER_PURCHASE,
+          type: plan.type,
           status: JobPromotionStatus.ACTIVE,
           starts_at: startsAt,
           ends_at: endsAt,
-          priority: priority ?? env.PROMOTION_DEFAULT_PRIORITY,
+          priority: plan.default_priority,
           amount_paid: amount,
-          currency: 'VND',
+          currency: plan.currency,
           created_at: now,
           updated_at: now
         })
@@ -209,11 +217,10 @@ class CompanyJobPromotionService {
         companyId,
         jobId,
         jobTitle: job.title,
-        type,
+        plan,
         startsAt,
         endsAt,
         amount,
-        priority
       })
     }
   }
@@ -223,21 +230,19 @@ class CompanyJobPromotionService {
     companyId,
     jobId,
     jobTitle,
-    type,
+    plan,
     startsAt,
     endsAt,
     amount,
-    priority
   }: {
     userId: ObjectId
     companyId: ObjectId
     jobId: ObjectId
     jobTitle: string
-    type: JobPromotionType
+    plan: JobPromotionPlan
     startsAt: Date
     endsAt: Date
     amount: number
-    priority?: number
   }) {
     const wallet = await databaseService.wallets.findOne({
       user_id: userId
@@ -247,6 +252,13 @@ class CompanyJobPromotionService {
       throw new AppError({
         statusCode: StatusCodes.FORBIDDEN,
         message: UserMessages.WALLET_LOCKED
+      })
+    }
+
+    if (wallet.currency !== plan.currency) {
+      throw new AppError({
+        statusCode: StatusCodes.BAD_REQUEST,
+        message: `Ví ${wallet.currency} không thể thanh toán gói có đơn vị ${plan.currency}.`
       })
     }
 
@@ -284,21 +296,27 @@ class CompanyJobPromotionService {
       })
     }
 
+    let insertedPromotionId: ObjectId | null = null
+
     try {
       const promotion = new JobPromotion({
         job_id: jobId,
         company_id: companyId,
-        type,
+        plan_id: plan._id,
+        plan_snapshot: this.getPlanSnapshot(plan),
+        source: JobPromotionSource.EMPLOYER_PURCHASE,
+        type: plan.type,
         status: JobPromotionStatus.ACTIVE,
         starts_at: startsAt,
         ends_at: endsAt,
-        priority: priority ?? env.PROMOTION_DEFAULT_PRIORITY,
+        priority: plan.default_priority,
         amount_paid: amount,
-        currency: 'VND',
+        currency: plan.currency,
         created_at: now,
         updated_at: now
       })
       const promotionResult = await databaseService.jobPromotions.insertOne(promotion)
+      insertedPromotionId = promotionResult.insertedId
 
       const transaction = new WalletTransaction({
         wallet_id: updatedWallet._id!,
@@ -330,19 +348,25 @@ class CompanyJobPromotionService {
         }
       }
     } catch (error) {
-      await databaseService.wallets.updateOne(
-        {
-          _id: updatedWallet._id
-        },
-        {
-          $inc: {
-            balance: amount
-          },
-          $set: {
-            updated_at: new Date()
-          }
+      try {
+        if (insertedPromotionId) {
+          await databaseService.jobPromotions.deleteOne({ _id: insertedPromotionId })
         }
-      )
+      } finally {
+        await databaseService.wallets.updateOne(
+          {
+            _id: updatedWallet._id
+          },
+          {
+            $inc: {
+              balance: amount
+            },
+            $set: {
+              updated_at: new Date()
+            }
+          }
+        )
+      }
 
       throw error
     }
@@ -359,7 +383,7 @@ class CompanyJobPromotionService {
     page: number
     limit: number
   }) {
-    await this.expireEndedPromotions(companyId)
+    await this.syncPromotionStatuses(companyId)
 
     const match: {
       company_id: ObjectId
@@ -419,7 +443,7 @@ class CompanyJobPromotionService {
   }
 
   async getCompanyPromotionDetailOrThrow({ companyId, promotionId }: { companyId: ObjectId; promotionId: ObjectId }) {
-    await this.expireEndedPromotions(companyId)
+    await this.syncPromotionStatuses(companyId)
 
     const promotion = await databaseService.jobPromotions
       .aggregate<CompanyPromotionListItem>([
@@ -453,7 +477,7 @@ class CompanyJobPromotionService {
   }
 
   async cancelPromotion({ companyId, promotionId }: { companyId: ObjectId; promotionId: ObjectId }) {
-    await this.expireEndedPromotions(companyId)
+    await this.syncPromotionStatuses(companyId)
 
     const promotion = await databaseService.jobPromotions.findOne({
       _id: promotionId,
@@ -467,7 +491,7 @@ class CompanyJobPromotionService {
       })
     }
 
-    if (promotion.status !== JobPromotionStatus.ACTIVE) {
+    if (![JobPromotionStatus.ACTIVE, JobPromotionStatus.SCHEDULED].includes(promotion.status)) {
       throw new AppError({
         statusCode: StatusCodes.BAD_REQUEST,
         message: UserMessages.JOB_PROMOTION_CANCEL_NOT_ALLOWED
@@ -503,7 +527,7 @@ class CompanyJobPromotionService {
     const duplicated = await databaseService.jobPromotions.findOne({
       job_id: jobId,
       type,
-      status: JobPromotionStatus.ACTIVE,
+      status: { $in: [JobPromotionStatus.ACTIVE, JobPromotionStatus.SCHEDULED] },
       starts_at: { $lt: endsAt },
       ends_at: { $gt: startsAt }
     })
@@ -516,19 +540,12 @@ class CompanyJobPromotionService {
     }
   }
 
-  private async expireEndedPromotions(companyId?: ObjectId) {
+  async syncPromotionStatuses(companyId?: ObjectId) {
     const now = new Date()
-    const filter: {
-      status: JobPromotionStatus
-      ends_at: { $lte: Date }
-      company_id?: ObjectId
-    } = {
-      status: JobPromotionStatus.ACTIVE,
-      ends_at: { $lte: now }
-    }
-
-    if (companyId) {
-      filter.company_id = companyId
+    const filter = {
+      status: { $in: [JobPromotionStatus.ACTIVE, JobPromotionStatus.SCHEDULED] },
+      ends_at: { $lte: now },
+      ...(companyId ? { company_id: companyId } : {})
     }
 
     await databaseService.jobPromotions.updateMany(filter, {
@@ -537,6 +554,29 @@ class CompanyJobPromotionService {
         updated_at: now
       }
     })
+
+    await databaseService.jobPromotions.updateMany(
+      {
+        status: JobPromotionStatus.SCHEDULED,
+        starts_at: { $lte: now },
+        ends_at: { $gt: now },
+        ...(companyId ? { company_id: companyId } : {})
+      },
+      { $set: { status: JobPromotionStatus.ACTIVE, updated_at: now } }
+    )
+  }
+
+  private getPlanSnapshot(plan: JobPromotionPlan) {
+    return {
+      code: plan.code,
+      name: plan.name,
+      type: plan.type,
+      daily_price: plan.daily_price,
+      currency: plan.currency,
+      min_duration_days: plan.min_duration_days,
+      max_duration_days: plan.max_duration_days,
+      default_priority: plan.default_priority
+    }
   }
 
   private getCompanyPromotionProjection() {
@@ -545,6 +585,9 @@ class CompanyJobPromotionService {
         _id: 1,
         job_id: 1,
         company_id: 1,
+        plan_id: 1,
+        plan_snapshot: 1,
+        source: 1,
         type: 1,
         status: 1,
         starts_at: 1,

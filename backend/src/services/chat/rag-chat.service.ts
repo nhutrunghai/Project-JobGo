@@ -1,4 +1,4 @@
-import { ObjectId } from 'mongodb'
+﻿import { ObjectId } from 'mongodb'
 import { StatusCodes } from 'http-status-codes'
 import env from '~/configs/env.config'
 import { ChatIntent } from '~/constants/chat-intent'
@@ -40,7 +40,7 @@ class RagChatService {
       return {
         session_id,
         intent: 'unsupported' as ChatIntent,
-        answer: config.maintenance_message || 'Chatbot đang tạm bảo trì. Vui lòng thử lại sau.',
+        answer: config.maintenance_message || 'Chatbot Ä‘ang táº¡m báº£o trÃ¬. Vui lÃ²ng thá»­ láº¡i sau.',
         sources: []
       }
     }
@@ -138,6 +138,40 @@ class RagChatService {
     }
   }
 
+  private getRequestedJobLimit(message: string) {
+    const normalized = message
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/\u0111/g, 'd')
+
+    const explicitMatch = normalized.match(
+      /(?:cho\s*(?:toi|minh)\s*)?(\d{1,2})\s*(?:job|jobs|cong\s*viec|viec\s*lam)/i
+    )
+    const trailingMatch = normalized.match(
+      /(?:job|jobs|cong\s*viec|viec\s*lam)\s*(?:backend|frontend|fullstack|java|python|node|react|tester|qa|devops)?\s*(\d{1,2})/i
+    )
+    const requested = Number(explicitMatch?.[1] || trailingMatch?.[1] || 0)
+
+    if (!Number.isFinite(requested) || requested <= 0) {
+      return null
+    }
+
+    return Math.min(Math.max(Math.floor(requested), 1), 20)
+  }
+
+  private getJobRetrievalLimit(message: string, defaultLimit: number) {
+    return this.getRequestedJobLimit(message) || defaultLimit
+  }
+
+  private getAnswerContextLimit(message: string, jobsCount: number, config: RagChatRuntimeConfig) {
+    const requestedLimit = this.getRequestedJobLimit(message)
+    const configuredLimit = Math.max(config.answer_context_limit, 1)
+    const limit = requestedLimit || configuredLimit
+
+    return Math.min(limit, jobsCount, 20)
+  }
+
   private async buildCvReviewAnswer({
     message,
     resumeId,
@@ -178,18 +212,18 @@ class RagChatService {
     })
 
     if (chunks.length === 0 && !visualReviewResult.summary) {
-      const fallbackReasons: string[] = ['Tôi chưa lấy được text CV từ Elasticsearch']
+      const fallbackReasons: string[] = ['TÃ´i chÆ°a láº¥y Ä‘Æ°á»£c text CV tá»« Elasticsearch']
 
       if (!resume.cv_url) {
-        fallbackReasons.push('CV này không có `cv_url` để phân tích PDF')
+        fallbackReasons.push('CV nÃ y khÃ´ng cÃ³ `cv_url` Ä‘á»ƒ phÃ¢n tÃ­ch PDF')
       } else if (visualReviewResult.error) {
-        fallbackReasons.push(`phân tích bố cục PDF chưa thực hiện được: ${visualReviewResult.error}`)
+        fallbackReasons.push(`phÃ¢n tÃ­ch bá»‘ cá»¥c PDF chÆ°a thá»±c hiá»‡n Ä‘Æ°á»£c: ${visualReviewResult.error}`)
       }
 
       return {
-        answer: `Hiện tôi chưa có đủ dữ liệu để đánh giá CV này. ${fallbackReasons.join(
+        answer: `Hiá»‡n tÃ´i chÆ°a cÃ³ Ä‘á»§ dá»¯ liá»‡u Ä‘á»ƒ Ä‘Ã¡nh giÃ¡ CV nÃ y. ${fallbackReasons.join(
           ', '
-        )}. Hãy kiểm tra lại file CV hoặc chạy lại pipeline ingest để có cả text chunks và dữ liệu PDF hợp lệ.`,
+        )}. HÃ£y kiá»ƒm tra láº¡i file CV hoáº·c cháº¡y láº¡i pipeline ingest Ä‘á»ƒ cÃ³ cáº£ text chunks vÃ  dá»¯ liá»‡u PDF há»£p lá»‡.`,
         sources: [this.buildSingleResumeSource(resume)]
       }
     }
@@ -278,20 +312,20 @@ class RagChatService {
     if (chunks.length === 0) {
       return {
         answer:
-          'Hiện tôi chưa lấy được dữ liệu text từ CV này để so khớp với job. Bạn hãy kiểm tra CV đã được ingest embedding hoặc chọn một CV khác.',
+          'Hiá»‡n tÃ´i chÆ°a láº¥y Ä‘Æ°á»£c dá»¯ liá»‡u text tá»« CV nÃ y Ä‘á»ƒ so khá»›p vá»›i job. Báº¡n hÃ£y kiá»ƒm tra CV Ä‘Ã£ Ä‘Æ°á»£c ingest embedding hoáº·c chá»n má»™t CV khÃ¡c.',
         sources: [this.buildSingleResumeSource(resume)]
       }
     }
 
     const jobs =
       intent === 'cv_match_previous_jobs'
-        ? await jobChatRetrievalService.retrieveForExplanation(message, lastJobIds, config.job_explanation_top_k)
-        : await jobChatRetrievalService.retrieveForJobSearch(this.buildResumeJobSearchQuery(chunks), config.job_search_top_k)
+        ? await jobChatRetrievalService.retrieveForExplanation(message, lastJobIds, this.getJobRetrievalLimit(message, config.job_explanation_top_k))
+        : await jobChatRetrievalService.retrieveForJobSearch(this.buildResumeJobSearchQuery(chunks), this.getJobRetrievalLimit(message, config.job_search_top_k))
 
     if (intent === 'cv_match_previous_jobs' && jobs.length === 0) {
       return {
         answer:
-          'Tôi chưa thấy danh sách job nào trước đó trong cuộc trò chuyện này để so khớp với CV. Bạn hãy tìm job trước, ví dụ: "tìm job backend", rồi hỏi lại job nào phù hợp với CV.',
+          'TÃ´i chÆ°a tháº¥y danh sÃ¡ch job nÃ o trÆ°á»›c Ä‘Ã³ trong cuá»™c trÃ² chuyá»‡n nÃ y Ä‘á»ƒ so khá»›p vá»›i CV. Báº¡n hÃ£y tÃ¬m job trÆ°á»›c, vÃ­ dá»¥: "tÃ¬m job backend", rá»“i há»i láº¡i job nÃ o phÃ¹ há»£p vá»›i CV.',
         sources: this.buildResumeSources(chunks)
       }
     }
@@ -299,12 +333,12 @@ class RagChatService {
     if (jobs.length === 0) {
       return {
         answer:
-          'Hiện tôi chưa tìm thấy job phù hợp để so khớp với CV này. Bạn có thể thử nêu rõ vị trí mong muốn, level hoặc địa điểm.',
+          'Hiá»‡n tÃ´i chÆ°a tÃ¬m tháº¥y job phÃ¹ há»£p Ä‘á»ƒ so khá»›p vá»›i CV nÃ y. Báº¡n cÃ³ thá»ƒ thá»­ nÃªu rÃµ vá»‹ trÃ­ mong muá»‘n, level hoáº·c Ä‘á»‹a Ä‘iá»ƒm.',
         sources: this.buildResumeSources(chunks)
       }
     }
 
-    const contextJobs = jobs.slice(0, config.answer_context_limit)
+    const contextJobs = jobs.slice(0, this.getAnswerContextLimit(message, jobs.length, config))
 
     try {
       const jsonAnswer = await llmService.generateJson<JobChatJsonAnswer>({
@@ -349,7 +383,7 @@ class RagChatService {
 
     return {
       answer:
-        'Tôi đã tìm được một số job có thể so khớp với CV, nhưng chưa tạo được phần giải thích chi tiết. Bạn có thể hỏi lại ngắn hơn hoặc thử chọn CV khác.',
+        'TÃ´i Ä‘Ã£ tÃ¬m Ä‘Æ°á»£c má»™t sá»‘ job cÃ³ thá»ƒ so khá»›p vá»›i CV, nhÆ°ng chÆ°a táº¡o Ä‘Æ°á»£c pháº§n giáº£i thÃ­ch chi tiáº¿t. Báº¡n cÃ³ thá»ƒ há»i láº¡i ngáº¯n hÆ¡n hoáº·c thá»­ chá»n CV khÃ¡c.',
       sources: [...contextAssemblyService.buildSources(contextJobs, contextJobs.length), ...this.buildResumeSources(chunks)]
     }
   }
@@ -371,9 +405,9 @@ class RagChatService {
   ) {
     switch (intent) {
       case 'job_search':
-        return jobChatRetrievalService.retrieveForJobSearch(message, config.job_search_top_k)
+        return jobChatRetrievalService.retrieveForJobSearch(message, this.getJobRetrievalLimit(message, config.job_search_top_k))
       case 'job_explanation':
-        return jobChatRetrievalService.retrieveForExplanation(message, lastJobIds, config.job_explanation_top_k)
+        return jobChatRetrievalService.retrieveForExplanation(message, lastJobIds, this.getJobRetrievalLimit(message, config.job_explanation_top_k))
       default:
         return []
     }
@@ -395,12 +429,12 @@ class RagChatService {
     if (jobs.length === 0) {
       return {
         answer:
-          'Hiện tôi chưa tìm thấy job phù hợp với câu hỏi này. Bạn có thể thử nêu rõ hơn về kỹ năng, level hoặc địa điểm.',
+          'Hiá»‡n tÃ´i chÆ°a tÃ¬m tháº¥y job phÃ¹ há»£p vá»›i cÃ¢u há»i nÃ y. Báº¡n cÃ³ thá»ƒ thá»­ nÃªu rÃµ hÆ¡n vá» ká»¹ nÄƒng, level hoáº·c Ä‘á»‹a Ä‘iá»ƒm.',
         sources: []
       }
     }
 
-    const contextJobs = jobs.slice(0, config.answer_context_limit)
+    const contextJobs = jobs.slice(0, this.getAnswerContextLimit(message, jobs.length, config))
 
     try {
       const jsonAnswer = await llmService.generateJson<JobChatJsonAnswer>({
@@ -427,10 +461,11 @@ class RagChatService {
       const selectedJobIds = new Set(jsonAnswer.selected_job_ids.filter((jobId) => contextJobs.some((job) => job.job_id === jobId)))
       const selectedJobs = contextJobs.filter((job) => selectedJobIds.has(job.job_id))
       const answerMatchedJobs = selectedJobs.length ? selectedJobs : this.matchJobsMentionedInAnswer(jsonAnswer.answer, contextJobs)
+      const sourceJobs = intent === 'job_search' ? contextJobs : answerMatchedJobs
 
       return {
         answer: jsonAnswer.answer,
-        sources: contextAssemblyService.buildSources(answerMatchedJobs, answerMatchedJobs.length)
+        sources: contextAssemblyService.buildSources(sourceJobs, sourceJobs.length)
       }
     } catch (error) {
       console.warn(
@@ -451,10 +486,11 @@ class RagChatService {
     })
 
     const answerMatchedJobs = this.matchJobsMentionedInAnswer(answer, contextJobs)
+    const sourceJobs = intent === 'job_search' ? contextJobs : answerMatchedJobs
 
     return {
       answer,
-      sources: contextAssemblyService.buildSources(answerMatchedJobs, answerMatchedJobs.length)
+      sources: contextAssemblyService.buildSources(sourceJobs, sourceJobs.length)
     }
   }
 
@@ -472,15 +508,15 @@ class RagChatService {
   }
 
   private async buildFreeformAnswer(intent: ChatIntent, message: string, config: RagChatRuntimeConfig) {
-    const scope = intent === 'policy_qa' ? 'câu hỏi chính sách/quy định' : 'câu hỏi ngoài phạm vi tuyển dụng'
+    const scope = intent === 'policy_qa' ? 'cÃ¢u há»i chÃ­nh sÃ¡ch/quy Ä‘á»‹nh' : 'cÃ¢u há»i ngoÃ i pháº¡m vi tuyá»ƒn dá»¥ng'
 
     try {
       return await llmService.generateText({
         provider: config.provider,
         model: config.chat_model,
-        prompt: `Bạn là trợ lý JobGo. Hãy trả lời ngắn gọn, rõ ràng bằng tiếng Việt cho ${scope}. Nếu không chắc chắn, hãy nói rõ giới hạn thông tin.
+        prompt: `Báº¡n lÃ  trá»£ lÃ½ JobGo. HÃ£y tráº£ lá»i ngáº¯n gá»n, rÃµ rÃ ng báº±ng tiáº¿ng Viá»‡t cho ${scope}. Náº¿u khÃ´ng cháº¯c cháº¯n, hÃ£y nÃ³i rÃµ giá»›i háº¡n thÃ´ng tin.
 
-Câu hỏi của user:
+CÃ¢u há»i cá»§a user:
 ${message}`
       })
     } catch (error) {
@@ -498,12 +534,12 @@ ${message}`
   private buildFallbackAnswer(intent: ChatIntent) {
     switch (intent) {
       case 'cv_review':
-        return 'Tính năng đánh giá CV sẽ được hỗ trợ ở bước sau. Hiện tại chatbot này đang hỗ trợ tư vấn job trên JobGo. Bạn có thể hỏi về tìm job, độ phù hợp hoặc so sánh các job.'
+        return 'TÃ­nh nÄƒng Ä‘Ã¡nh giÃ¡ CV sáº½ Ä‘Æ°á»£c há»— trá»£ á»Ÿ bÆ°á»›c sau. Hiá»‡n táº¡i chatbot nÃ y Ä‘ang há»— trá»£ tÆ° váº¥n job trÃªn JobGo. Báº¡n cÃ³ thá»ƒ há»i vá» tÃ¬m job, Ä‘á»™ phÃ¹ há»£p hoáº·c so sÃ¡nh cÃ¡c job.'
       case 'policy_qa':
-        return 'Tính năng hỏi đáp về luật, quy định và tài liệu kiến thức sẽ được hỗ trợ sau khi dữ liệu được tải lên hệ thống. Hiện tại chatbot này đang hỗ trợ tư vấn job trên JobGo. Bạn có thể hỏi về tìm job, độ phù hợp hoặc so sánh các job.'
+        return 'TÃ­nh nÄƒng há»i Ä‘Ã¡p vá» luáº­t, quy Ä‘á»‹nh vÃ  tÃ i liá»‡u kiáº¿n thá»©c sáº½ Ä‘Æ°á»£c há»— trá»£ sau khi dá»¯ liá»‡u Ä‘Æ°á»£c táº£i lÃªn há»‡ thá»‘ng. Hiá»‡n táº¡i chatbot nÃ y Ä‘ang há»— trá»£ tÆ° váº¥n job trÃªn JobGo. Báº¡n cÃ³ thá»ƒ há»i vá» tÃ¬m job, Ä‘á»™ phÃ¹ há»£p hoáº·c so sÃ¡nh cÃ¡c job.'
       case 'unsupported':
       default:
-        return 'Hiện tại chatbot này đang hỗ trợ tư vấn job trên JobGo. Bạn có thể hỏi về tìm job, độ phù hợp hoặc so sánh các job.'
+        return 'Hiá»‡n táº¡i chatbot nÃ y Ä‘ang há»— trá»£ tÆ° váº¥n job trÃªn JobGo. Báº¡n cÃ³ thá»ƒ há»i vá» tÃ¬m job, Ä‘á»™ phÃ¹ há»£p hoáº·c so sÃ¡nh cÃ¡c job.'
     }
   }
 }

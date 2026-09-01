@@ -11,8 +11,12 @@ import cors from 'cors'
 import corsOptions from '~/configs/cors.config.js'
 import morgan from 'morgan'
 import uploadThingProvider from '~/providers/uploadthing.provider.js'
+import adminJobPromotionPlanService from '~/services/admin/job-promotion-plan.service.js'
+import { startPromotionStatusWorker } from '~/services/jobs/promotion-status.worker.js'
 export const createApp = async () => {
-  databaseService.connect()
+  await databaseService.connect()
+  await adminJobPromotionPlanService.ensureDefaultPlans()
+  startPromotionStatusWorker()
   await ensurePublicJobsSearchIndex()
   await ensureResumeChunksSearchIndex()
   const app = express()
@@ -22,7 +26,6 @@ export const createApp = async () => {
     app.use(morgan('dev'))
   }
   app.disable('etag')
-  // Xá»­ lÃ½ no-cache cho cÃ¡c API request
   app.use((req, res, next) => {
     res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate')
     res.setHeader('Pragma', 'no-cache')

@@ -111,13 +111,13 @@ function normalizeSetting(setting = {}) {
   }
 }
 
-export async function getMyProfile({ force = false } = {}) {
+export async function getMyProfile({ force = false, redirectOnUnauthorized = true } = {}) {
   if (!force) {
     const cached = readCache('profile')
     if (cached) return cached
   }
 
-  const response = await apiClient.get('/user/me')
+  const response = await apiClient.get('/user/me', { redirectOnUnauthorized })
   return writeCache('profile', normalizeMyProfile(response?.data?.data))
 }
 

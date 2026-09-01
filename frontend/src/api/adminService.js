@@ -2,22 +2,6 @@ import { buildApiUrl, createJsonHeaders } from '../config/api.js'
 
 const ADMIN_AUTH_STORAGE_KEYS = ['adminToken', 'adminAccessToken', 'adminRefreshToken', 'adminUser']
 
-function getAdminStoredValue(key) {
-  if (typeof window === 'undefined') return ''
-  return window.localStorage.getItem(key) || window.sessionStorage.getItem(key) || ''
-}
-
-function getPreferredAdminStorage() {
-  if (typeof window === 'undefined') return null
-  return window.localStorage.getItem('adminAccessToken') || window.localStorage.getItem('adminToken')
-    ? window.localStorage
-    : window.sessionStorage
-}
-
-export function getAdminAccessToken() {
-  return getAdminStoredValue('adminAccessToken') || getAdminStoredValue('adminToken')
-}
-
 function clearAdminAuthSession() {
   if (typeof window === 'undefined') return
   ADMIN_AUTH_STORAGE_KEYS.forEach((key) => {
@@ -26,31 +10,7 @@ function clearAdminAuthSession() {
   })
 }
 
-function saveAdminAuthSession(payload) {
-  if (typeof window === 'undefined' || !payload) return
-
-  const accessToken = payload.accessToken || payload.AccessToken || payload.token || payload.access_token || ''
-  const refreshToken = payload.refreshToken || payload.RefreshToken || payload.refresh_token || ''
-  const adminUser = payload.admin || payload.user || payload.data?.admin || payload.data?.user || null
-
-  if (!accessToken && !refreshToken && !adminUser) return
-
-  const storage = getPreferredAdminStorage() || window.localStorage
-  clearAdminAuthSession()
-
-  if (accessToken) {
-    storage.setItem('adminAccessToken', accessToken)
-    storage.setItem('adminToken', accessToken)
-  }
-
-  if (refreshToken) {
-    storage.setItem('adminRefreshToken', refreshToken)
-  }
-
-  if (adminUser) {
-    storage.setItem('adminUser', JSON.stringify(adminUser))
-  }
-}
+clearAdminAuthSession()
 
 async function readPayload(response) {
   try {
@@ -75,12 +35,7 @@ function redirectToAdminLogin() {
 }
 
 async function adminRequest(method, path, { params, data, redirectOnUnauthorized = true } = {}) {
-  const adminToken = getAdminAccessToken()
   const headers = createJsonHeaders({}, { auth: false, hasBody: data !== undefined })
-
-  if (adminToken && !headers.has('Authorization')) {
-    headers.set('Authorization', `Bearer ${adminToken}`)
-  }
 
   const response = await fetch(buildApiUrl(path, params), {
     method,
@@ -113,7 +68,6 @@ export async function adminLogin(body) {
     redirectOnUnauthorized: false,
   })
 
-  saveAdminAuthSession(result)
   return result
 }
 
@@ -173,6 +127,34 @@ export async function updateAdminCompanyStatus(companyId, verified) {
   })
 }
 
+
+export async function getAdminJobCategories() {
+  return adminRequest('GET', '/admin/job-categories')
+}
+
+export async function createAdminJobCategory(body) {
+  const result = await adminRequest('POST', '/admin/job-categories', {
+    data: body,
+  })
+  return result?.category ?? result
+}
+
+export async function updateAdminJobCategory(categoryId, body) {
+  const result = await adminRequest('PATCH', `/admin/job-categories/${categoryId}`, {
+    data: body,
+  })
+  return result?.category ?? result
+}
+
+export async function updateAdminJobCategoryStatus(categoryId, isActive) {
+  const result = await adminRequest('PATCH', `/admin/job-categories/${categoryId}/status`, {
+    data: {
+      is_active: Boolean(isActive),
+    },
+  })
+  return result?.category ?? result
+}
+
 export async function getAdminJobs(params = {}) {
   return adminRequest('GET', '/admin/jobs', { params })
 }
@@ -203,13 +185,9 @@ export async function createAdminJobPromotion(body) {
   const result = await adminRequest('POST', '/admin/job-promotions', {
     data: {
       jobId: body?.jobId,
-      type: body?.type,
-      status: body?.status,
+      plan_id: body?.plan_id,
       starts_at: body?.starts_at,
       ends_at: body?.ends_at,
-      priority: body?.priority,
-      amount_paid: body?.amount_paid,
-      currency: body?.currency,
     },
   })
 
@@ -224,17 +202,28 @@ export async function updateAdminJobPromotion(promotionId, body) {
   return result?.promotion ?? result
 }
 
+export async function getAdminJobPromotionPlans() {
+  return adminRequest('GET', '/admin/job-promotion-plans')
+}
+
+export async function createAdminJobPromotionPlan(body) {
+  const result = await adminRequest('POST', '/admin/job-promotion-plans', { data: body })
+  return result?.plan ?? result
+}
+
+export async function updateAdminJobPromotionPlan(planId, body) {
+  const result = await adminRequest('PATCH', `/admin/job-promotion-plans/${planId}`, { data: body })
+  return result?.plan ?? result
+}
+
+export async function deleteAdminJobPromotionPlan(planId) {
+  const result = await adminRequest('DELETE', `/admin/job-promotion-plans/${planId}`)
+  return result?.plan ?? result
+}
+
 export async function deleteAdminJobPromotion(promotionId) {
   const result = await adminRequest('DELETE', `/admin/job-promotions/${promotionId}`)
   return result?.promotion ?? result
-}
-
-export async function reorderAdminJobPromotions(items) {
-  return adminRequest('PATCH', '/admin/job-promotions/reorder', {
-    data: {
-      items: Array.isArray(items) ? items : [],
-    },
-  })
 }
 
 export async function getAdminWalletTransactions(params = {}) {

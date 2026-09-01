@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { getUserNotificationUnreadCount, subscribeUnreadNotificationCount } from '../api/notificationService.js'
-import { getMyProfile } from '../api/userService.js'
+import useCurrentUser from '../hooks/useCurrentUser.js'
 import UserAvatar from './UserAvatar.jsx'
 
 const candidateSections = [
@@ -167,7 +167,7 @@ function SidebarSections({ sections, normalizedActiveKey, onNavigateClose, onRol
 export default function DashboardSidebar({ activeKey }) {
   const { pathname } = useLocation()
   const navigate = useNavigate()
-  const [profile, setProfile] = useState(null)
+  const { profile } = useCurrentUser()
   const [mobileOpen, setMobileOpen] = useState(false)
   const [unreadCount, setUnreadCount] = useState(0)
   const [roleSwitchLoading, setRoleSwitchLoading] = useState(null)
@@ -191,21 +191,6 @@ export default function DashboardSidebar({ activeKey }) {
       navigate(item.to, { state: { toast } })
     }, 750)
   }
-
-  useEffect(() => {
-    let mounted = true
-    getMyProfile()
-      .then((data) => {
-        if (mounted) setProfile(data)
-      })
-      .catch(() => {
-        if (mounted) setProfile(null)
-      })
-
-    return () => {
-      mounted = false
-    }
-  }, [])
 
   useEffect(() => {
     let active = true

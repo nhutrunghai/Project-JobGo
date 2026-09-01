@@ -2,38 +2,21 @@ import { useEffect, useMemo, useState } from 'react'
 import AdminLayout from '../../components/AdminLayout.jsx'
 import Toast from '../../components/Toast.jsx'
 import { getAdminAuditLogs, getAdminUsers } from '../../api/adminService.js'
+import { compactId, formatDateTimeVi as formatDateTime, toIsoString } from '../../utils/formatters.js'
 
 const actionOptions = [
   '', 'admin.login', 'admin.logout', 'user.status.update', 'company.verification.update', 'job.moderation.update',
   'wallet.adjust', 'wallet.transactions.view', 'user.wallet.view', 'user.topup_orders.view',
   'sepay.config.view', 'sepay.config.update', 'sepay.secret.rotate', 'sepay.test_connection', 'sepay.diagnostics.view',
   'rag_chat.config.view', 'rag_chat.config.update', 'rag_chat.secret.rotate', 'rag_chat.health.view',
-  'job_promotion.view', 'job_promotion.create', 'job_promotion.update', 'job_promotion.delete', 'job_promotion.reorder',
+  'job_promotion.view', 'job_promotion.create', 'job_promotion.update', 'job_promotion.delete',
+  'job_promotion_plan.create', 'job_promotion_plan.update', 'job_promotion_plan.delete',
 ]
 
-const targetTypeOptions = ['', 'admin', 'user', 'company', 'job', 'wallet', 'wallet_transaction', 'wallet_topup_order', 'sepay', 'rag_chat', 'system_setting', 'job_promotion']
+const targetTypeOptions = ['', 'admin', 'user', 'company', 'job', 'wallet', 'wallet_transaction', 'wallet_topup_order', 'sepay', 'rag_chat', 'system_setting', 'job_promotion', 'job_promotion_plan']
 
 const inputClassName =
   'h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-[13px] font-medium text-slate-800 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-100'
-
-function formatDateTime(value) {
-  if (!value) return 'Chưa có'
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return 'Chưa có'
-  return new Intl.DateTimeFormat('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }).format(date)
-}
-
-function toIsoString(value) {
-  if (!value) return undefined
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return undefined
-  return date.toISOString()
-}
-
-function compactId(value) {
-  if (!value) return 'Chưa có'
-  return `${String(value).slice(0, 8)}...${String(value).slice(-6)}`
-}
 
 function PickerModal({ open, onClose, onSelect }) {
   const [keyword, setKeyword] = useState('')
@@ -102,7 +85,6 @@ export default function AdminAuditLogs() {
 
   useEffect(() => {
     let active = true
-    setLoading(true)
     getAdminAuditLogs({
       page: pagination.page,
       limit: pagination.limit,
@@ -129,9 +111,30 @@ export default function AdminAuditLogs() {
     }
   }, [filters.action, filters.fromDate, filters.success, filters.targetType, filters.toDate, pagination.limit, pagination.page, selectedAdmin?._id])
 
-  useEffect(() => {
+  const updateFilter = (key, value) => {
+    setLoading(true)
+    setFilters((current) => ({ ...current, [key]: value }))
     setPagination((current) => ({ ...current, page: 1 }))
-  }, [filters.action, filters.fromDate, filters.success, filters.targetType, filters.toDate, selectedAdmin?._id])
+  }
+
+  const selectAdmin = (admin) => {
+    setLoading(true)
+    setSelectedAdmin(admin)
+    setPagination((current) => ({ ...current, page: 1 }))
+    setIsPickerOpen(false)
+  }
+
+  const resetFilters = () => {
+    setLoading(true)
+    setSelectedAdmin(null)
+    setFilters({ action: '', targetType: '', success: '', fromDate: '', toDate: '' })
+    setPagination((current) => ({ ...current, page: 1 }))
+  }
+
+  const changePage = (page) => {
+    setLoading(true)
+    setPagination((current) => ({ ...current, page }))
+  }
 
   const stats = useMemo(() => ({
     success: logs.filter((item) => item.success).length,
@@ -143,7 +146,7 @@ export default function AdminAuditLogs() {
   return (
     <AdminLayout title="Nhật Ký Admin" subtitle="Theo dõi hành động quản trị, lọc theo quản trị viên, action, resource và khoảng thời gian, đồng thời xem chi tiết metadata thay đổi.">
       <Toast toast={toast} onClose={() => setToast(null)} />
-      <PickerModal open={isPickerOpen} onClose={() => setIsPickerOpen(false)} onSelect={(admin) => { setSelectedAdmin(admin); setIsPickerOpen(false) }} />
+      <PickerModal open={isPickerOpen} onClose={() => setIsPickerOpen(false)} onSelect={selectAdmin} />
 
       <section className="mb-3 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <div className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm"><p className="text-[10px] font-extrabold uppercase tracking-[0.16em] text-slate-400">Success</p><p className="mt-2 text-2xl font-extrabold text-emerald-700">{stats.success}</p></div>
@@ -158,20 +161,20 @@ export default function AdminAuditLogs() {
             <p className="truncate text-[13px] font-bold text-slate-700">{selectedAdmin ? selectedAdmin.fullName || selectedAdmin.username || selectedAdmin.email : 'Tất cả admin'}</p>
             <button type="button" onClick={() => setIsPickerOpen(true)} className="h-7 rounded-md border border-slate-200 bg-white px-2 text-[11px] font-extrabold text-slate-600 transition hover:bg-slate-50">Chọn</button>
           </div>
-          <select value={filters.action} onChange={(event) => setFilters((current) => ({ ...current, action: event.target.value }))} className={inputClassName}>
+          <select value={filters.action} onChange={(event) => updateFilter('action', event.target.value)} className={inputClassName}>
             <option value="">Tất cả action</option>
             {actionOptions.filter(Boolean).map((value) => <option key={value} value={value}>{value}</option>)}
           </select>
-          <select value={filters.targetType} onChange={(event) => setFilters((current) => ({ ...current, targetType: event.target.value }))} className={inputClassName}>
+          <select value={filters.targetType} onChange={(event) => updateFilter('targetType', event.target.value)} className={inputClassName}>
             <option value="">Tất cả resource</option>
             {targetTypeOptions.filter(Boolean).map((value) => <option key={value} value={value}>{value}</option>)}
           </select>
-          <select value={filters.success} onChange={(event) => setFilters((current) => ({ ...current, success: event.target.value }))} className={inputClassName}>
+          <select value={filters.success} onChange={(event) => updateFilter('success', event.target.value)} className={inputClassName}>
             <option value="">Tất cả kết quả</option><option value="true">Success</option><option value="false">Failed</option>
           </select>
-          <input type="datetime-local" value={filters.fromDate} onChange={(event) => setFilters((current) => ({ ...current, fromDate: event.target.value }))} className={inputClassName} />
-          <input type="datetime-local" value={filters.toDate} onChange={(event) => setFilters((current) => ({ ...current, toDate: event.target.value }))} className={inputClassName} />
-          <button type="button" onClick={() => { setSelectedAdmin(null); setFilters({ action: '', targetType: '', success: '', fromDate: '', toDate: '' }) }} className="h-10 rounded-md border border-slate-200 bg-white px-3 text-[13px] font-extrabold text-slate-600 transition hover:bg-slate-50">Đặt lại</button>
+          <input type="datetime-local" value={filters.fromDate} onChange={(event) => updateFilter('fromDate', event.target.value)} className={inputClassName} />
+          <input type="datetime-local" value={filters.toDate} onChange={(event) => updateFilter('toDate', event.target.value)} className={inputClassName} />
+          <button type="button" onClick={resetFilters} className="h-10 rounded-md border border-slate-200 bg-white px-3 text-[13px] font-extrabold text-slate-600 transition hover:bg-slate-50">Đặt lại</button>
         </div>
       </section>
 
@@ -196,8 +199,8 @@ export default function AdminAuditLogs() {
           <div className="mt-auto flex flex-col gap-2 border-t border-slate-100 px-4 py-3 text-[12px] font-semibold text-slate-500 sm:flex-row sm:items-center sm:justify-between">
             <span>Trang {pagination.page || 1}/{pagination.total_pages || 1} · Tổng {pagination.total || logs.length} log</span>
             <div className="grid grid-cols-2 gap-2 sm:flex sm:items-center">
-              <button type="button" disabled={Number(pagination.page) <= 1} onClick={() => setPagination((current) => ({ ...current, page: Number(current.page || 1) - 1 }))} className="h-8 rounded-md border border-slate-200 bg-white px-3 font-bold text-slate-700 disabled:cursor-not-allowed disabled:opacity-40">Trước</button>
-              <button type="button" disabled={Number(pagination.page) >= Number(pagination.total_pages || 1)} onClick={() => setPagination((current) => ({ ...current, page: Number(current.page || 1) + 1 }))} className="h-8 rounded-md border border-slate-200 bg-white px-3 font-bold text-slate-700 disabled:cursor-not-allowed disabled:opacity-40">Sau</button>
+              <button type="button" disabled={Number(pagination.page) <= 1} onClick={() => changePage(Number(pagination.page || 1) - 1)} className="h-8 rounded-md border border-slate-200 bg-white px-3 font-bold text-slate-700 disabled:cursor-not-allowed disabled:opacity-40">Trước</button>
+              <button type="button" disabled={Number(pagination.page) >= Number(pagination.total_pages || 1)} onClick={() => changePage(Number(pagination.page || 1) + 1)} className="h-8 rounded-md border border-slate-200 bg-white px-3 font-bold text-slate-700 disabled:cursor-not-allowed disabled:opacity-40">Sau</button>
             </div>
           </div>
         </section>

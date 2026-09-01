@@ -104,6 +104,21 @@ const indexes: DatabaseIndexDefinition[] = [
     option: { name: 'job_type_status_ends_at' }
   },
   {
+    collection: env.DB_JOB_PROMOTION_NAME,
+    key: { plan_id: 1, status: 1, starts_at: 1, ends_at: 1 },
+    option: { name: 'plan_status_time' }
+  },
+  {
+    collection: env.DB_JOB_PROMOTION_PLAN_NAME,
+    key: { code: 1 },
+    option: { unique: true, name: 'promotion_plan_code_unique' }
+  },
+  {
+    collection: env.DB_JOB_PROMOTION_PLAN_NAME,
+    key: { is_active: 1, sort_order: 1 },
+    option: { name: 'promotion_plan_active_sort_order' }
+  },
+  {
     collection: env.DB_WALLET_NAME,
     key: { user_id: 1 },
     option: { unique: true, name: 'user_id_unique' }

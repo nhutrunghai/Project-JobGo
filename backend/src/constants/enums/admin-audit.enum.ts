@@ -21,7 +21,9 @@ export enum AdminAuditAction {
   JOB_PROMOTION_CREATE = 'job_promotion.create',
   JOB_PROMOTION_UPDATE = 'job_promotion.update',
   JOB_PROMOTION_DELETE = 'job_promotion.delete',
-  JOB_PROMOTION_REORDER = 'job_promotion.reorder'
+  JOB_PROMOTION_PLAN_CREATE = 'job_promotion_plan.create',
+  JOB_PROMOTION_PLAN_UPDATE = 'job_promotion_plan.update',
+  JOB_PROMOTION_PLAN_DELETE = 'job_promotion_plan.delete'
 }
 
 export enum AdminAuditTargetType {
@@ -35,5 +37,6 @@ export enum AdminAuditTargetType {
   SEPAY = 'sepay',
   RAG_CHAT = 'rag_chat',
   SYSTEM_SETTING = 'system_setting',
-  JOB_PROMOTION = 'job_promotion'
+  JOB_PROMOTION = 'job_promotion',
+  JOB_PROMOTION_PLAN = 'job_promotion_plan'
 }

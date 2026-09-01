@@ -22,7 +22,8 @@ export const registerValidator = z.object({
       fullName: fullNameSchema,
       email: emailSchema,
       password: passwordSchema,
-      confirmPassword: CONFIRM_PASSWORD_NOT_STRING
+      confirmPassword: CONFIRM_PASSWORD_NOT_STRING,
+      remember: z.boolean().optional()
     })
     .refine((data) => data.password === data.confirmPassword, {
       message: UserMessages.CONFIRM_PASSWORD_MISMATCH,
@@ -32,13 +33,8 @@ export const registerValidator = z.object({
 export const loginValidator = z.object({
   body: z.object({
     email: emailSchema,
-    password: passwordSchema
-  })
-})
-
-export const refreshValidator = z.object({
-  body: z.object({
-    refresh_token: z.string({ message: UserMessages.REFRESH_TOKEN_NOT_FOUND })
+    password: passwordSchema,
+    remember: z.boolean().optional()
   })
 })
 export const verifyEmailValidator = z.object({
@@ -62,9 +58,4 @@ export const resetPasswordValidator = z.object({
       message: UserMessages.CONFIRM_PASSWORD_MISMATCH,
       path: ['confirmPassword']
     })
-})
-export const logoutValidator = z.object({
-  body: z.object({
-    refresh_token: z.string({ message: UserMessages.REFRESH_TOKEN_NOT_FOUND })
-  })
 })

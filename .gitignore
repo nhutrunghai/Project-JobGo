@@ -4,6 +4,10 @@ embedding-api/.cache/
 embedding-api/.models/
 embedding-api/__pycache__/
 
+# Local browser profiles and snapshot backups are runtime artifacts.
+logs/
+backups/
+
 # Frontend
 frontend/node_modules/
 frontend/dist/

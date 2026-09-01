@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import DashboardSidebar from '../components/DashboardSidebar.jsx'
 import Toast from '../components/Toast.jsx'
 import { deleteUserUploadedCv, loadUserUploadedCvs, uploadUserResume } from '../data/apiClient.js'
+import { toSafeResourceUrl } from '../utils/safeUrl.js'
 
 function formatDateTime(value) {
   if (!value) return 'Chưa cập nhật'
@@ -319,7 +320,7 @@ export default function UploadedCvs() {
               </div>
               <div className="flex items-center gap-2">
                 <a
-                  href={previewCv.cvUrl}
+                  href={toSafeResourceUrl(previewCv.cvUrl) || undefined}
                   target="_blank"
                   rel="noreferrer"
                   className="inline-flex h-9 items-center justify-center rounded-lg border border-slate-200 px-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
@@ -337,7 +338,8 @@ export default function UploadedCvs() {
             </div>
             <iframe
               title={`Preview ${previewCv.title}`}
-              src={previewCv.cvUrl}
+              src={toSafeResourceUrl(previewCv.cvUrl) || undefined}
+              sandbox="allow-same-origin allow-downloads"
               className="min-h-0 flex-1 border-0 bg-slate-100"
             />
           </div>
@@ -440,7 +442,12 @@ export default function UploadedCvs() {
                 </button>
               </div>
               {uploadPreviewUrl ? (
-                <iframe title="Preview CV upload" src={uploadPreviewUrl} className="min-h-0 flex-1 border-0 bg-white" />
+              <iframe
+                title="Preview CV upload"
+                src={toSafeResourceUrl(uploadPreviewUrl) || undefined}
+                sandbox="allow-same-origin allow-downloads"
+                className="min-h-0 flex-1 border-0 bg-white"
+              />
               ) : (
                 <div className="flex flex-1 items-center justify-center p-6 text-center">
                   <div>

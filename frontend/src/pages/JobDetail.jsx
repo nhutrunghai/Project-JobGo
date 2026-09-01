@@ -1,17 +1,13 @@
 import { Link, useNavigate, useParams } from 'react-router-dom'
+import RichTextContent from '../components/RichTextContent.jsx'
 import { useEffect, useMemo, useState } from 'react'
-import { getMyProfile } from '../api/userService.js'
 import Toast from '../components/Toast.jsx'
+import LoginModal from '../components/auth/LoginModal.jsx'
+import PublicHeader from '../components/layout/PublicHeader.jsx'
 import UserAvatar from '../components/UserAvatar.jsx'
-import JobCategoryNavItem from '../components/JobCategoryNavItem.jsx'
-import { getAccessToken, getRefreshToken } from '../config/api.js'
-import { applyToJob, loadJobDetail, loadOtherJobDetails, loadUserUploadedCvs, withdrawAppliedJob } from '../data/apiClient.js'
-
-const homeNav = [
-  { label: 'Việc làm IT', path: '/search-jobs', icon: 'work' },
-  { label: 'Bài viết', path: '/discussions', icon: 'article' },
-  { label: 'AI Agent', path: '/ai-agent', icon: 'smart_toy' },
-]
+import useCurrentUser from '../hooks/useCurrentUser.js'
+import { hasAccessToken } from '../config/api.js'
+import { applyToJob, loadJobDetail, loadOtherJobDetails, loadUserUploadedCvs, searchPublicJobs, withdrawAppliedJob } from '../data/apiClient.js'
 const locationOptions = [
   { label: 'Tất cả địa điểm', value: '' },
   { label: 'Hồ Chí Minh', value: 'Ho Chi Minh' },
@@ -31,17 +27,17 @@ const jobTypeOptions = [
 export default function JobDetail() {
   const { id } = useParams()
   const navigate = useNavigate()
+  const session = useCurrentUser()
+  const { refreshSession } = session
   const [jobs, setJobs] = useState([])
   const [job, setJob] = useState(null)
   const [isLoadingJob, setIsLoadingJob] = useState(true)
   const [jobLoadError, setJobLoadError] = useState('')
-  const [userProfile, setUserProfile] = useState(null)
-  const [userMenuOpen, setUserMenuOpen] = useState(false)
-  const [isAuthenticated, setIsAuthenticated] = useState(() => Boolean(getAccessToken() || getRefreshToken()))
   const [keyword, setKeyword] = useState('')
   const [location, setLocation] = useState('')
   const [jobType, setJobType] = useState('')
   const [applyOpen, setApplyOpen] = useState(false)
+  const [loginOpen, setLoginOpen] = useState(false)
   const [withdrawn, setWithdrawn] = useState(false)
   const [isWithdrawing, setIsWithdrawing] = useState(false)
   const [uploadedCvs, setUploadedCvs] = useState([])
@@ -50,9 +46,9 @@ export default function JobDetail() {
   const [toast, setToast] = useState(null)
   const [applyForm, setApplyForm] = useState({
     cvId: '',
-    fullName: 'Nguyễn Văn A',
-    email: 'nguyenvana@example.com',
-    phone: '0901234567',
+    fullName: '',
+    email: '',
+    phone: '',
     location: '',
     coverLetter: '',
     allowAiAnalysis: false,
@@ -67,18 +63,41 @@ export default function JobDetail() {
       setJobLoadError('')
 
       try {
-        const [jobData, otherJobs] = await Promise.all([loadJobDetail(id), loadOtherJobDetails(id)])
+        const jobData = await loadJobDetail(id)
         if (!active) return
 
         if (!jobData) {
+          const fallbackJobs = await loadOtherJobDetails(id)
+          if (!active) return
           setJob(null)
-          setJobs(otherJobs || [])
+          setJobs(fallbackJobs || [])
           setJobLoadError('Không thể tải chi tiết công việc này hoặc tin đã không còn tồn tại.')
           return
         }
 
+        const primaryCategoryId = jobData.categoryIds?.[0]
+        let relatedJobs = []
+
+        if (primaryCategoryId) {
+          try {
+            const relatedResult = await searchPublicJobs({
+              category_id: primaryCategoryId,
+              page: 1,
+              limit: 6,
+            })
+            relatedJobs = (relatedResult.jobs || []).filter((item) => item.id !== jobData.id)
+          } catch {
+            relatedJobs = []
+          }
+        }
+
+        if (!relatedJobs.length) {
+          relatedJobs = await loadOtherJobDetails(id)
+        }
+
+        if (!active) return
         setJob(jobData)
-        setJobs([jobData, ...(otherJobs || [])])
+        setJobs([jobData, ...(relatedJobs || [])])
       } catch (error) {
         if (!active) return
         setJob(null)
@@ -97,28 +116,6 @@ export default function JobDetail() {
   }, [id])
 
   useEffect(() => {
-    let active = true
-
-    if (!isAuthenticated) {
-      return () => {
-        active = false
-      }
-    }
-
-    getMyProfile()
-      .then((profile) => {
-        if (active) setUserProfile(profile)
-      })
-      .catch(() => {
-        if (active) setUserProfile(null)
-      })
-
-    return () => {
-      active = false
-    }
-  }, [isAuthenticated])
-
-  useEffect(() => {
     if (!applyOpen) return undefined
     const previousOverflow = document.body.style.overflow
     document.body.style.overflow = 'hidden'
@@ -133,7 +130,7 @@ export default function JobDetail() {
     let mounted = true
     setIsLoadingCvs(true)
 
-    loadUserUploadedCvs()
+    loadUserUploadedCvs({ redirectOnUnauthorized: false, throwOnError: true })
       .then((items) => {
         if (!mounted) return
         const activeItems = items.filter((item) => item.status !== 'deleted')
@@ -143,8 +140,15 @@ export default function JobDetail() {
           cvId: prev.cvId || activeItems.find((item) => item.isDefault)?.id || activeItems[0]?.id || '',
         }))
       })
-      .catch((error) => {
+      .catch(async (error) => {
         if (!mounted) return
+        if (!hasAccessToken()) {
+          await refreshSession()
+          if (!mounted) return
+          setApplyOpen(false)
+          setLoginOpen(true)
+          return
+        }
         setToast({ type: 'error', message: error.message || 'Không thể tải danh sách CV.' })
       })
       .finally(() => {
@@ -154,7 +158,7 @@ export default function JobDetail() {
     return () => {
       mounted = false
     }
-  }, [applyOpen])
+  }, [applyOpen, refreshSession])
 
   const otherJobs = useMemo(() => {
     if (!job) return []
@@ -166,7 +170,7 @@ export default function JobDetail() {
 
     return [
       { icon: 'apartment', label: 'Quy mô', value: job.companyFacts?.size || 'Đang cập nhật' },
-      { icon: 'category', label: 'Lĩnh vực', value: job.tags?.join(', ') || 'Đang cập nhật' },
+      { icon: 'work', label: 'Lĩnh vực', value: job.tags?.join(', ') || 'Đang cập nhật' },
       { icon: 'schedule', label: 'Thời gian', value: job.workMode || 'Đang cập nhật' },
       { icon: 'language', label: 'Website', value: job.companyFacts?.website || 'Đang cập nhật' },
     ]
@@ -175,11 +179,8 @@ export default function JobDetail() {
   const applicationStatus = job?.myApplication?.status || ''
   const hasApplied = Boolean(job?.myApplication)
   const alreadyWithdrawn = withdrawn || applicationStatus === 'withdrawn'
+  const hasActiveApplication = hasApplied && !alreadyWithdrawn
   const actionJobId = job?.applyId || job?.backendId || job?.id
-  const profileName = userProfile?.fullName || userProfile?.username || 'Tài khoản người dùng'
-  const profileHandle = userProfile?.username ? `@${userProfile.username}` : '@mycoder-user'
-  const profileAvatar = userProfile?.avatar || ''
-
   const submitSearch = () => {
     const params = new URLSearchParams()
     if (keyword.trim()) params.set('q', keyword.trim())
@@ -189,15 +190,32 @@ export default function JobDetail() {
     navigate(query ? `/search-jobs?${query}` : '/search-jobs')
   }
 
-  const handleLogout = () => {
-    ;['token', 'accessToken', 'refreshToken', 'user', 'authUser', 'isLoggedIn'].forEach((key) => {
-      localStorage.removeItem(key)
-      sessionStorage.removeItem(key)
-    })
-    setUserMenuOpen(false)
-    setIsAuthenticated(false)
-    setUserProfile(null)
-    navigate('/login')
+  const handleApplyIntent = async () => {
+    if (!session.isAuthenticated) {
+      setLoginOpen(true)
+      return
+    }
+
+    if (session.isLoading) {
+      const currentProfile = await refreshSession({ force: false })
+      if (!currentProfile) {
+        setLoginOpen(true)
+        return
+      }
+    }
+
+    setApplyOpen(true)
+  }
+
+  const handleInlineLoginSuccess = async (result) => {
+    const currentProfile = await refreshSession({ force: true })
+    if (!currentProfile) {
+      throw new Error('Không thể xác nhận phiên đăng nhập. Vui lòng thử lại.')
+    }
+
+    setLoginOpen(false)
+    setToast({ type: 'success', message: result?.message || 'Đăng nhập thành công.' })
+    setApplyOpen(true)
   }
 
   const handleApplySubmit = async () => {
@@ -213,10 +231,17 @@ export default function JobDetail() {
 
     setIsApplying(true)
     try {
-      const application = await applyToJob(actionJobId, {
-        cvId: applyForm.cvId,
-        coverLetter: applyForm.coverLetter,
-      })
+      const application = await applyToJob(
+        actionJobId,
+        {
+          cvId: applyForm.cvId,
+          coverLetter: applyForm.coverLetter,
+          fullName: applyForm.fullName,
+          email: applyForm.email,
+          phone: applyForm.phone,
+        },
+        { redirectOnUnauthorized: false },
+      )
 
       setJob((prev) =>
         prev
@@ -236,6 +261,12 @@ export default function JobDetail() {
       setApplyOpen(false)
       setToast({ type: 'success', message: 'Ứng tuyển thành công.' })
     } catch (error) {
+      if (!hasAccessToken()) {
+        await refreshSession()
+        setApplyOpen(false)
+        setLoginOpen(true)
+        return
+      }
       setToast({ type: 'error', message: error.message || 'Không thể nộp hồ sơ ứng tuyển.' })
     } finally {
       setIsApplying(false)
@@ -281,82 +312,7 @@ export default function JobDetail() {
   return (
     <div className="min-h-screen bg-[#f3f7fb] text-slate-900">
       <Toast toast={toast} onClose={() => setToast(null)} />
-      <nav className="sticky top-0 z-50 w-full border-b border-slate-100 bg-white/95 backdrop-blur-md">
-        <div className="mx-auto flex max-w-[1180px] items-center justify-between px-4 py-2 sm:px-5">
-          <div className="flex min-w-0 items-center gap-6">
-            <Link to="/" className="flex min-w-0 items-center text-lg font-bold tracking-tight text-[#2b59ff] sm:text-xl">
-              <span className="material-symbols-outlined mr-1 text-2xl" style={{ fontVariationSettings: "'FILL' 1" }}>
-                code
-              </span>
-              MYCODER
-            </Link>
-            <div className="hidden items-center gap-4 text-[13.5px] font-medium text-slate-600 lg:flex">
-              {homeNav.map((item) => (
-                item.path === '/search-jobs' ? (
-                  <JobCategoryNavItem key={item.label} item={item} active />
-                ) : (
-                  <Link key={item.label} className="nav-link-animate flex items-center gap-1.5" to={item.path}>
-                    <span className="material-symbols-outlined text-[17px]">{item.icon}</span>
-                    {item.label}
-                  </Link>
-                )
-              ))}
-            </div>
-          </div>
-          <div className="flex shrink-0 items-center gap-2 sm:gap-3">
-            {isAuthenticated ? (
-              <>
-                <Link to="/notifications" className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-100 text-slate-600 transition hover:bg-slate-200 sm:h-10 sm:w-10">
-                  <span className="material-symbols-outlined">notifications</span>
-                </Link>
-                <Link to="/messages" className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-100 text-slate-600 transition hover:bg-slate-200 sm:h-10 sm:w-10">
-                  <span className="material-symbols-outlined">chat</span>
-                </Link>
-                <div className="relative">
-                  <button
-                    type="button"
-                    onClick={() => setUserMenuOpen((prev) => !prev)}
-                    className="block h-9 w-9 overflow-hidden rounded-full border border-slate-200 bg-slate-200 transition hover:ring-2 hover:ring-blue-100"
-                  >
-                    <UserAvatar src={profileAvatar} name={profileName} className="h-full w-full" textClassName="text-xs" />
-                  </button>
-                  {userMenuOpen ? (
-                    <div className="absolute right-0 top-12 z-[60] w-56 rounded-2xl border border-slate-200 bg-white p-2 shadow-[0_18px_40px_-24px_rgba(15,23,42,0.28)]">
-                      <div className="border-b border-slate-100 px-3 py-2">
-                        <p className="truncate text-sm font-bold text-slate-800">{profileName}</p>
-                        <p className="truncate text-xs text-slate-400">{profileHandle}</p>
-                      </div>
-                      <div className="pt-2">
-                        <Link to="/dashboard" onClick={() => setUserMenuOpen(false)} className="flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50">
-                          <span className="material-symbols-outlined text-[18px]">dashboard</span>
-                          Dashboard
-                        </Link>
-                        <Link to="/favorites" onClick={() => setUserMenuOpen(false)} className="flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50">
-                          <span className="material-symbols-outlined text-[18px]">favorite</span>
-                          Việc yêu thích
-                        </Link>
-                        <button type="button" onClick={handleLogout} className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm font-medium text-rose-600 transition hover:bg-rose-50">
-                          <span className="material-symbols-outlined text-[18px]">logout</span>
-                          Đăng xuất
-                        </button>
-                      </div>
-                    </div>
-                  ) : null}
-                </div>
-              </>
-            ) : (
-              <>
-                <Link to="/login" className="inline-flex h-9 items-center justify-center rounded-full border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 transition hover:border-sky-200 hover:text-sky-800 sm:h-10 sm:px-4 sm:text-sm">
-                  Đăng nhập
-                </Link>
-                <Link to="/register" className="inline-flex h-9 items-center justify-center rounded-full bg-[#2b59ff] px-3 text-xs font-bold text-white transition hover:bg-[#1f4bf1] sm:h-10 sm:px-4 sm:text-sm">
-                  Đăng ký
-                </Link>
-              </>
-            )}
-          </div>
-        </div>
-      </nav>
+      <PublicHeader session={session} activeNav="/search-jobs" containerClassName="max-w-[1180px] px-4 sm:px-5" />
 
       <section className="search-hero-enter bg-gradient-to-r from-[#1d4ed8] via-[#2563eb] to-[#0ea5e9] py-4 shadow-sm sm:py-5">
         <div className="mx-auto flex w-full max-w-[1180px] flex-col gap-3 px-4 sm:px-5 lg:flex-row lg:items-center">
@@ -449,14 +405,19 @@ export default function JobDetail() {
               <div className="mt-6 flex flex-col gap-3 sm:flex-row">
                 <button
                   onClick={() => {
-                    if (hasApplied) {
+                    if (hasActiveApplication) {
                       setIsWithdrawing(true)
-                      withdrawAppliedJob(actionJobId)
+                      withdrawAppliedJob(actionJobId, { redirectOnUnauthorized: false })
                         .then(() => {
                           setWithdrawn(true)
                           setJob((prev) => (prev ? { ...prev, status: 'Đã rút', myApplication: { ...prev.myApplication, status: 'withdrawn' } } : prev))
                         })
                         .catch((error) => {
+                          if (!hasAccessToken()) {
+                            void refreshSession()
+                            setLoginOpen(true)
+                            return
+                          }
                           alert(error.message || 'Không thể rút hồ sơ.')
                         })
                         .finally(() => {
@@ -464,14 +425,14 @@ export default function JobDetail() {
                         })
                       return
                     }
-                    setApplyOpen(true)
+                    void handleApplyIntent()
                   }}
-                  disabled={alreadyWithdrawn || isWithdrawing}
+                  disabled={isWithdrawing}
                   className={`flex-1 rounded-xl px-5 py-3 text-base font-bold text-white transition ${
-                    hasApplied ? 'bg-rose-600 hover:bg-rose-700' : 'bg-[#007bff] hover:bg-blue-700'
-                  } ${alreadyWithdrawn ? 'cursor-default opacity-70 hover:bg-rose-600' : ''}`}
+                    hasActiveApplication ? 'bg-rose-600 hover:bg-rose-700' : 'bg-[#007bff] hover:bg-blue-700'
+                  } ${isWithdrawing ? 'cursor-default opacity-70' : ''}`}
                 >
-                  {alreadyWithdrawn ? 'Đã rút hồ sơ' : hasApplied ? (isWithdrawing ? 'Đang rút...' : 'Rút hồ sơ') : 'Ứng tuyển ngay'}
+                  {hasActiveApplication ? (isWithdrawing ? 'Đang rút...' : 'Rút hồ sơ') : alreadyWithdrawn ? 'Ứng tuyển lại' : 'Ứng tuyển ngay'}
                 </button>
               </div>
             </section>
@@ -480,7 +441,6 @@ export default function JobDetail() {
               <div className="mb-6 flex items-center justify-between gap-4 overflow-x-auto border-b border-slate-200 pb-4">
                 <div className="flex min-w-max items-center gap-6 sm:gap-8">
                   <button className="border-b-2 border-[#007bff] pb-3 text-[15px] font-semibold text-[#007bff]">Chi tiết tin tuyển dụng</button>
-                  <button className="pb-3 text-[15px] font-semibold text-slate-400">Việc làm liên quan</button>
                 </div>
               </div>
 
@@ -501,52 +461,82 @@ export default function JobDetail() {
               <div className="space-y-8">
                 <section>
                   <h3 className="mb-3 text-[17px] font-semibold text-slate-950">Mô tả công việc</h3>
-                  <ul className="space-y-2 text-[14px] leading-7 text-slate-700">
-                    {job.responsibilities.map((item) => (
-                      <li key={item} className="ml-5 list-disc">
-                        {item}
-                      </li>
-                    ))}
-                  </ul>
+                  <RichTextContent value={job.richDescription || job.responsibilities.join('\n')} className="text-[14px] leading-7 text-slate-700" />
                 </section>
 
                 <section>
                   <h3 className="mb-3 text-[17px] font-semibold text-slate-950">Yêu cầu ứng viên</h3>
-                  <ul className="space-y-2 text-[14px] leading-7 text-slate-700">
-                    {job.requirements.map((item) => (
-                      <li key={item} className="ml-5 list-disc">
-                        {item}
-                      </li>
-                    ))}
-                  </ul>
+                  <RichTextContent value={job.richRequirements || job.requirements.join('\n')} className="text-[14px] leading-7 text-slate-700" />
                 </section>
 
                 <section>
                   <h3 className="mb-3 text-[17px] font-semibold text-slate-950">Quyền lợi</h3>
-                  <ul className="space-y-2 text-[14px] leading-7 text-slate-700">
-                    {job.benefits.map((item) => (
-                      <li key={item} className="ml-5 list-disc">
-                        {item}
-                      </li>
-                    ))}
-                  </ul>
+                  <RichTextContent value={job.richBenefits || job.benefits.join('\n')} className="text-[14px] leading-7 text-slate-700" />
                 </section>
               </div>
             </section>
 
-            <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-[0_24px_60px_-45px_rgba(15,23,42,0.4)] sm:p-5">
-              <h3 className="mb-4 text-[19px] font-semibold tracking-tight text-slate-950">Chi tiết các công việc khác</h3>
-              <div className="grid gap-3 md:grid-cols-2">
+            <section className="space-y-3">
+              <div className="flex items-center justify-between gap-3">
+                <h3 className="text-[19px] font-semibold tracking-tight text-slate-950">Việc làm liên quan</h3>
+                {job.categoryIds?.[0] ? (
+                  <Link
+                    to={`/search-jobs?category_id=${encodeURIComponent(job.categoryIds[0])}`}
+                    className="text-sm font-bold text-[#007bff] hover:underline"
+                  >
+                    Xem thêm
+                  </Link>
+                ) : null}
+              </div>
+
+              <div className="space-y-3">
                 {otherJobs.map((item) => (
-                  <article key={item.id} className="rounded-xl border border-slate-200 p-4 transition hover:border-blue-300 hover:bg-blue-50/40">
-                    <h4 className="text-sm font-bold text-slate-900">{item.title}</h4>
-                    <p className="mt-1 text-sm text-slate-500">{item.company}</p>
-                    <p className="mt-1 text-sm font-semibold text-emerald-600">{item.salary}</p>
-                    <Link className="mt-3 inline-flex text-sm font-bold text-[#007bff] hover:underline" to={`/job-detail/${item.id}`}>
-                      Xem chi tiết
+                  <article key={item.id} className="soft-radius group border border-slate-100 bg-white p-5 shadow-sm transition hover:border-blue-200 hover:bg-blue-50/30 hover:shadow-md">
+                    <div className="mb-4 flex items-start justify-between gap-3">
+                      <div className="flex min-w-0 items-center gap-3">
+                        <UserAvatar src={item.avatar} name={item.company} className="h-10 w-10 border border-slate-50" textClassName="text-xs" />
+                        <div className="min-w-0">
+                          <h4 className="truncate text-[14px] font-bold text-slate-800">{item.company}</h4>
+                          <p className="mt-0.5 text-[11px] text-slate-400">
+                            {item.postedAt} / <span className="material-symbols-outlined !text-[11px]">location_on</span> {item.location}
+                          </p>
+                        </div>
+                      </div>
+                      <span className="material-symbols-outlined text-slate-300 transition group-hover:text-red-400">favorite</span>
+                    </div>
+
+                    <Link to={`/job-detail/${item.id}`} className="mb-3 block text-[17px] font-bold text-slate-900 transition-colors group-hover:text-primary hover:text-primary">
+                      {item.title}
                     </Link>
+
+                    <div className="mb-2 flex items-center gap-1.5 text-[13px] font-bold text-[#28a745]">
+                      <span className="material-symbols-outlined !text-[16px]">payments</span> {item.salary}
+                    </div>
+
+                    <p className="mb-3 text-[12px] leading-relaxed text-slate-600">
+                      <span className="font-semibold text-slate-700">Yêu cầu:</span> {item.requirements || 'Đang cập nhật yêu cầu'}
+                    </p>
+
+                    <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                      <div className="flex flex-wrap gap-2">
+                        {(item.tags || item.skills || []).slice(0, 5).map((tag) => (
+                          <span key={tag} className="rounded-md bg-slate-100 px-2.5 py-1 text-[11px] font-medium text-slate-600 transition hover:bg-slate-200">
+                            {tag}
+                          </span>
+                        ))}
+                      </div>
+                      <Link to={`/job-detail/${item.id}`} className="inline-flex justify-center rounded-lg bg-[#007bff] px-3.5 py-2 text-[12px] font-bold text-white transition hover:bg-blue-700">
+                        Xem chi tiết
+                      </Link>
+                    </div>
                   </article>
                 ))}
+
+                {!otherJobs.length ? (
+                  <div className="rounded-2xl border border-dashed border-slate-200 bg-white p-6 text-center text-sm font-semibold text-slate-500">
+                    Chưa có việc làm liên quan phù hợp.
+                  </div>
+                ) : null}
               </div>
             </section>
           </div>
@@ -559,10 +549,10 @@ export default function JobDetail() {
               <div className="mt-6 space-y-4">
                 {companyFacts.map((item) => (
                   <div key={item.label} className="flex items-start gap-3">
-                    <div className="mt-0.5 flex h-10 w-10 items-center justify-center rounded-xl bg-blue-50 text-[#007bff]">
+                    <div className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-[#007bff]">
                       <span className="material-symbols-outlined text-[20px]">{item.icon}</span>
                     </div>
-                    <div>
+                    <div className="min-w-0 flex-1">
                       <p className="text-[13px] text-slate-500">{item.label}</p>
                       <p className="mt-1 text-[15px] font-semibold text-slate-900">{item.value}</p>
                     </div>
@@ -593,25 +583,16 @@ export default function JobDetail() {
               </div>
             </section>
 
-            <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_24px_60px_-45px_rgba(15,23,42,0.4)]">
-              <h3 className="mb-4 text-[19px] font-semibold tracking-tight text-slate-950">Công việc trong danh sách</h3>
-              <div className="space-y-2.5">
-                {jobs.map((item) => (
-                  <Link
-                    key={item.id}
-                    className={`block rounded-lg border px-3 py-2 text-sm font-semibold transition ${
-                      item.id === job.id ? 'border-blue-300 bg-blue-50 text-blue-700' : 'border-slate-200 text-slate-700 hover:border-blue-300 hover:bg-blue-50'
-                    }`}
-                    to={`/job-detail/${item.id}`}
-                  >
-                    {item.title}
-                  </Link>
-                ))}
-              </div>
-            </section>
           </aside>
         </div>
       </main>
+
+      {loginOpen ? (
+        <LoginModal
+          onClose={() => setLoginOpen(false)}
+          onSuccess={handleInlineLoginSuccess}
+        />
+      ) : null}
 
       {applyOpen ? (
         <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-900/45 p-3 sm:p-4">
@@ -661,7 +642,7 @@ export default function JobDetail() {
                           }`}
                         >
                           <span className="min-w-0">
-                            <span className="block truncate text-[13px] font-bold text-slate-800">{cv.title}</span>
+                            <span className="block truncate text-[13px] font-semibold text-slate-800">{cv.title}</span>
                             <span className="mt-0.5 flex items-center gap-2 text-[12px] text-slate-500">
                               <span>{cv.fileType}</span>
                               {cv.isDefault ? <span className="rounded-full bg-amber-50 px-2 py-0.5 font-semibold text-amber-700">CV mặc định</span> : null}

@@ -1,24 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { getUserNotificationUnreadCount, subscribeUnreadNotificationCount } from './api/notificationService.js'
-import { getMyProfile } from './api/userService.js'
 import UserAvatar from './components/UserAvatar.jsx'
-import JobCategoryNavItem from './components/JobCategoryNavItem.jsx'
-import { loadFavoriteIds, loadFeaturedJobs, loadHomeMeta, loadLatestJobs, toggleFavoriteJob } from './data/apiClient.js'
-
-const AUTH_SESSION_KEYS = ['token', 'accessToken', 'refreshToken', 'isLoggedIn']
-
-function hasActiveAuthSession() {
-  if (typeof window === 'undefined') return false
-
-  return AUTH_SESSION_KEYS.some((key) => window.localStorage.getItem(key) || window.sessionStorage.getItem(key))
-}
-
-const homeNav = [
-  { label: 'Việc làm IT', path: '/search-jobs', icon: 'work' },
-  { label: 'Bài viết', path: '/discussions', icon: 'article' },
-  { label: 'AI Agent', path: '/ai-agent', icon: 'smart_toy' },
-]
+import PublicHeader from './components/layout/PublicHeader.jsx'
+import useCurrentUser from './hooks/useCurrentUser.js'
+import { useFavoriteStore } from './stores/useFavoriteStore.js'
+import { loadFeaturedJobs, loadHomeMeta, loadLatestJobs } from './data/apiClient.js'
 
 const FEATURED_PAGE_LIMIT = 2
 const LATEST_PAGE_LIMIT = 6
@@ -77,25 +63,16 @@ function JobCard({ job, favoriteSet, onToggleFavorite, animationDelay = '0ms' })
 
 export default function App() {
   const navigate = useNavigate()
+  const session = useCurrentUser()
+  const { isAuthenticated, profileName, profileHandle, profileAvatar } = session
+  const favoriteSet = useFavoriteStore((state) => state.favoriteIds)
+  const toggleFavoriteInStore = useFavoriteStore((state) => state.toggle)
   const [featuredJobs, setFeaturedJobs] = useState([])
   const [latestJobs, setLatestJobs] = useState([])
   const [search, setSearch] = useState('')
   const [searchError, setSearchError] = useState('')
-  const [userMenuOpen, setUserMenuOpen] = useState(false)
-  const [isAuthenticated, setIsAuthenticated] = useState(() => hasActiveAuthSession())
-  const [favoriteSet, setFavoriteSet] = useState(() => {
-    try {
-      const raw = localStorage.getItem('favorite_job_ids')
-      const parsed = raw ? JSON.parse(raw) : []
-      return new Set(Array.isArray(parsed) ? parsed : [])
-    } catch {
-      return new Set()
-    }
-  })
   const [bannerOpen, setBannerOpen] = useState(true)
   const [homeMeta, setHomeMeta] = useState(null)
-  const [userProfile, setUserProfile] = useState(null)
-  const [unreadNotificationCount, setUnreadNotificationCount] = useState(0)
   const [typedHeroTitle, setTypedHeroTitle] = useState('')
   const [isLoadingJobs, setIsLoadingJobs] = useState(true)
   const [featuredPagination, setFeaturedPagination] = useState(null)
@@ -107,83 +84,22 @@ export default function App() {
     const loadData = async () => {
       setIsLoadingJobs(true)
       try {
-        const [featuredData, latestData, homeData, ids] = await Promise.all([
+        const [featuredData, latestData, homeData] = await Promise.all([
           loadFeaturedJobs({ page: 1, limit: FEATURED_PAGE_LIMIT }).catch(() => ({ jobs: [], pagination: null })),
           loadLatestJobs({ page: 1, limit: LATEST_PAGE_LIMIT }).catch(() => ({ jobs: [], pagination: null })),
           loadHomeMeta().catch(() => null),
-          loadFavoriteIds().catch(() => []),
         ])
         setFeaturedJobs(featuredData?.jobs || [])
         setLatestJobs(latestData?.jobs || [])
         setFeaturedPagination(featuredData?.pagination || null)
         setLatestPagination(latestData?.pagination || null)
         setHomeMeta(homeData)
-        setFavoriteSet(new Set(ids))
       } finally {
         setIsLoadingJobs(false)
       }
     }
     loadData()
   }, [])
-
-  useEffect(() => {
-    localStorage.setItem('favorite_job_ids', JSON.stringify(Array.from(favoriteSet)))
-  }, [favoriteSet])
-
-
-  useEffect(() => {
-    let active = true
-
-    if (!isAuthenticated) {
-      return () => {
-        active = false
-      }
-    }
-
-    getMyProfile()
-      .then((profile) => {
-        if (active) {
-          setUserProfile(profile)
-        }
-      })
-      .catch(() => {
-        if (active) {
-          setUserProfile(null)
-        }
-      })
-
-    return () => {
-      active = false
-    }
-  }, [isAuthenticated])
-
-  useEffect(() => {
-    let active = true
-
-    if (!isAuthenticated) {
-      setUnreadNotificationCount(0)
-      return () => {
-        active = false
-      }
-    }
-
-    getUserNotificationUnreadCount()
-      .then((count) => {
-        if (active) setUnreadNotificationCount(count)
-      })
-      .catch(() => {
-        if (active) setUnreadNotificationCount(0)
-      })
-
-    const unsubscribe = subscribeUnreadNotificationCount((count) => {
-      setUnreadNotificationCount(count)
-    })
-
-    return () => {
-      active = false
-      unsubscribe()
-    }
-  }, [isAuthenticated])
 
   const sidebarJobs = useMemo(() => {
     const merged = [...featuredJobs, ...latestJobs]
@@ -268,48 +184,29 @@ export default function App() {
       if (typingTimer) window.clearInterval(typingTimer)
     }
   }, [heroTitle])
-  const profileName = userProfile?.fullName || userProfile?.username || 'Tài khoản người dùng'
-  const profileHandle = userProfile?.username ? `@${userProfile.username}` : '@mycoder-user'
-  const profileAvatar = userProfile?.avatar || ''
   const heroSubtitle = homeMeta?.hero?.subtitle || 'Nền tảng việc làm công nghệ chất lượng cho developer Việt Nam.'
 
   const toggleFavorite = (key) => {
-    const shouldFavorite = !favoriteSet.has(key)
+    if (!isAuthenticated) {
+      navigate('/login', { state: { from: { pathname: '/', search: '' } } })
+      return
+    }
 
-    setFavoriteSet((prev) => {
-      const next = new Set(prev)
-      if (shouldFavorite) next.add(key)
-      else next.delete(key)
-      return next
+    void toggleFavoriteInStore(key).catch((error) => {
+      console.error('Failed to update favorite job', error)
     })
-
-    toggleFavoriteJob(key, shouldFavorite).catch(() => {
-      setFavoriteSet((prev) => {
-        const next = new Set(prev)
-        if (shouldFavorite) next.delete(key)
-        else next.add(key)
-        return next
-      })
-      if (!hasActiveAuthSession()) {
-        navigate('/login', { state: { from: { pathname: '/', search: '' } } })
-      }
-    })
-  }
-
-  const handleLogout = () => {
-    ;['token', 'accessToken', 'refreshToken', 'user', 'authUser', 'isLoggedIn'].forEach((key) => {
-      localStorage.removeItem(key)
-      sessionStorage.removeItem(key)
-    })
-    setUserMenuOpen(false)
-    setIsAuthenticated(false)
-    setUserProfile(null)
-    navigate('/login')
   }
 
   const popularCategories = useMemo(() => (homeMeta?.categories || []).filter((item) => item?.name).slice(0, 6), [homeMeta])
   const featuredCategory = popularCategories[0]
   const compactCategories = popularCategories.slice(1, 5)
+  const buildCategorySearchLink = (category) => {
+    const params = new URLSearchParams({
+      category_id: String(category.id),
+      category_name: category.name,
+    })
+    return `/search-jobs?${params.toString()}`
+  }
 
   const handleSearchNavigate = () => {
     const q = search.trim()
@@ -325,111 +222,7 @@ export default function App() {
 
   return (
     <div className="bg-white text-on-surface">
-      <nav className="sticky top-0 z-50 w-full border-b border-slate-100 bg-white/95 backdrop-blur-md">
-        <div className="mx-auto flex max-w-[1440px] items-center justify-between px-4 py-2 sm:px-6">
-          <div className="flex min-w-0 items-center gap-6">
-            <Link to="/" className="flex min-w-0 items-center text-lg font-bold tracking-tight text-[#2b59ff] sm:text-xl">
-              <span className="material-symbols-outlined mr-1 text-2xl" style={{ fontVariationSettings: "'FILL' 1" }}>
-                code
-              </span>
-              MYCODER
-            </Link>
-            <div className="hidden items-center gap-4 text-[13.5px] font-medium text-slate-600 lg:flex">
-              {homeNav.map((item) => (
-                item.path === '/search-jobs' ? (
-                  <JobCategoryNavItem key={item.label} item={item} />
-                ) : (
-                  <Link key={item.label} className="nav-link-animate flex items-center gap-1.5" to={item.path}>
-                    <span className="material-symbols-outlined text-[17px]">{item.icon}</span>
-                    {item.label}
-                  </Link>
-                )
-              ))}
-            </div>
-          </div>
-          <div className="flex shrink-0 items-center gap-2 sm:gap-3">
-            {isAuthenticated ? (
-              <>
-                <Link to="/notifications" className="relative flex h-10 w-10 items-center justify-center rounded-full bg-slate-100 text-slate-600 transition hover:bg-slate-200">
-                  <span className="material-symbols-outlined">notifications</span>
-                  {unreadNotificationCount > 0 ? (
-                    <span className="absolute -right-1 -top-1 min-w-[18px] rounded-full bg-sky-500 px-1.5 py-0.5 text-center text-[10px] font-bold text-white">
-                      {unreadNotificationCount > 99 ? '99+' : unreadNotificationCount}
-                    </span>
-                  ) : null}
-                </Link>
-                <Link to="/messages" className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-100 text-slate-600 transition hover:bg-slate-200">
-                  <span className="material-symbols-outlined">chat</span>
-                </Link>
-                <div className="relative">
-                  <button
-                    type="button"
-                    onClick={() => setUserMenuOpen((prev) => !prev)}
-                    className="block h-9 w-9 overflow-hidden rounded-full border border-slate-200 bg-slate-200 transition hover:ring-2 hover:ring-blue-100"
-                  >
-                    <UserAvatar src={profileAvatar} name={profileName} className="h-full w-full" textClassName="text-xs" />
-                  </button>
-                  {userMenuOpen && (
-                    <div className="absolute right-0 top-12 z-[60] w-56 rounded-2xl border border-slate-200 bg-white p-2 shadow-[0_18px_40px_-24px_rgba(15,23,42,0.28)]">
-                      <div className="border-b border-slate-100 px-3 py-2">
-                        <p className="truncate text-sm font-bold text-slate-800">{profileName}</p>
-                        <p className="truncate text-xs text-slate-400">{profileHandle}</p>
-                      </div>
-                      <div className="pt-2">
-                        <Link to="/dashboard" onClick={() => setUserMenuOpen(false)} className="flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50">
-                          <span className="material-symbols-outlined text-[18px]">dashboard</span>
-                          Dashboard
-                        </Link>
-                        <Link to="/favorites" onClick={() => setUserMenuOpen(false)} className="flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50">
-                          <span className="material-symbols-outlined text-[18px]">favorite</span>
-                          Việc yêu thích
-                        </Link>
-                        <Link to="/user/profile" onClick={() => setUserMenuOpen(false)} className="flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50">
-                          <span className="material-symbols-outlined text-[18px]">person</span>
-                          Hồ sơ
-                        </Link>
-                        <Link to="/user/settings" onClick={() => setUserMenuOpen(false)} className="flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50">
-                          <span className="material-symbols-outlined text-[18px]">settings</span>
-                          Cài đặt
-                        </Link>
-                        <Link to="/messages" onClick={() => setUserMenuOpen(false)} className="flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50">
-                          <span className="material-symbols-outlined text-[18px]">chat_bubble_outline</span>
-                          Tin nhắn
-                        </Link>
-                        <button type="button" onClick={handleLogout} className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm font-medium text-rose-600 transition hover:bg-rose-50">
-                          <span className="material-symbols-outlined text-[18px]">logout</span>
-                          Đăng xuất
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </>
-            ) : (
-              <>
-                <Link to="/login" className="inline-flex h-9 items-center justify-center rounded-full border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 transition hover:border-sky-200 hover:text-sky-800 sm:h-10 sm:px-4 sm:text-sm">
-                  Đăng nhập
-                </Link>
-                <Link to="/register" className="inline-flex h-9 items-center justify-center rounded-full bg-[#2b59ff] px-3 text-xs font-bold text-white transition hover:bg-[#1f4bf1] sm:h-10 sm:px-4 sm:text-sm">
-                  Đăng ký
-                </Link>
-              </>
-            )}
-          </div>
-        </div>
-        <div className="flex gap-2 overflow-x-auto px-4 pb-3 lg:hidden">
-          {homeNav.map((item) => (
-            <Link
-              key={item.label}
-              to={item.path}
-              className="inline-flex h-10 shrink-0 items-center gap-2 rounded-full bg-slate-50 px-3 text-xs font-bold text-slate-600 transition hover:bg-blue-50 hover:text-blue-700"
-            >
-              <span className="material-symbols-outlined text-[18px]">{item.icon}</span>
-              {item.label}
-            </Link>
-          ))}
-        </div>
-      </nav>
+      <PublicHeader session={session} />
 
       <main className="mx-auto max-w-[1440px] px-4 py-3 sm:px-6 sm:py-4">
         <div className={`soft-radius mb-4 flex flex-col items-start justify-between gap-2 border border-slate-100 bg-white p-2.5 shadow-sm transition-all duration-300 sm:mb-6 sm:flex-row sm:items-center ${bannerOpen ? 'max-h-32 opacity-100 sm:max-h-28' : 'pointer-events-none max-h-0 overflow-hidden opacity-0'}`}>
@@ -470,7 +263,6 @@ export default function App() {
                     <nav className="space-y-1">
                       {[
                         { label: 'Việc làm', to: '#' },
-                        { label: 'Tìm Developer', to: '#' },
                         { label: 'Việc đã ứng tuyển', to: '/jobs' },
                         { label: 'Việc yêu thích', to: '/favorites' },
                         { label: 'Quản lý việc', to: '/dashboard' },
@@ -519,7 +311,7 @@ export default function App() {
 
                 <div className="p-3">
                   {featuredCategory ? (
-                    <Link to={`/search-jobs?q=${encodeURIComponent(featuredCategory.name)}`} className="group mb-3 block rounded-2xl border border-blue-100 bg-gradient-to-br from-blue-600 to-cyan-500 p-3 text-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-md">
+                    <Link to={buildCategorySearchLink(featuredCategory)} className="group mb-3 block rounded-2xl border border-blue-100 bg-gradient-to-br from-blue-600 to-cyan-500 p-3 text-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-md">
                       <div className="mb-3 flex items-start justify-between gap-3">
                         <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-white/18 backdrop-blur">
                           <span className="material-symbols-outlined !text-[20px]">rocket_launch</span>
@@ -539,7 +331,7 @@ export default function App() {
                       const tone = CATEGORY_TONES[index % CATEGORY_TONES.length]
 
                       return (
-                        <Link key={item.name} to={`/search-jobs?q=${encodeURIComponent(item.name)}`} className={`group rounded-2xl border p-2.5 transition hover:-translate-y-0.5 hover:shadow-sm ${tone.ring}`}>
+                        <Link key={item.name} to={buildCategorySearchLink(item)} className={`group rounded-2xl border p-2.5 transition hover:-translate-y-0.5 hover:shadow-sm ${tone.ring}`}>
                           <div className="mb-2 flex items-center justify-between gap-2">
                             <span className="material-symbols-outlined !text-[18px]">{tone.icon}</span>
                             <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-black ${tone.badge}`}>{item.count || 'Go'}</span>

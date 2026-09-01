@@ -9,7 +9,6 @@ import UserMessages from '~/constants/messages/index.js'
 import {
   EmailVerifyRqType,
   LoginRqType,
-  RefreshRqType,
   RegisterRqType,
   ResetPasswordRqType
 } from '~/types/http/request.type.js'
@@ -20,6 +19,21 @@ import { comparePassword, hashToken } from '~/utils/crypto.utils.js'
 import { OtpType } from '~/constants/enums.js'
 import { VerifyOtpLocals } from '~/types/http/response.type.js'
 import OtpCode from '~/models/schema/client/otpCodes.schema.js'
+import { clearRefreshTokenCookie } from '~/utils/auth-cookie.util.js'
+
+export const TrustedAuthOriginMiddleware = (req: Request, res: Response, next: NextFunction) => {
+  const origin = req.headers.origin
+  if (!origin) return next()
+
+  const trustedOrigins = new Set([
+    ...env.ALLOWED_ORIGINS,
+    new URL(env.FRONTEND_URL).origin
+  ])
+  if (trustedOrigins.has(origin)) return next()
+
+  return next(new AppError({ statusCode: StatusCodes.FORBIDDEN, message: 'Nguồn yêu cầu xác thực không được phép.' }))
+}
+
 export const checkOtpVerify = async (condition: { code: string; type: OtpType }, next: NextFunction) => {
   const result = await databaseService.otpCodes.findOne(condition)
   if (!result) {
@@ -89,26 +103,30 @@ export const LogoutMiddleware = async (req: Request, res: Response, next: NextFu
         await redis.set(`blacklist:${payload.jti}`, '1', 'EX', ttl)
       }
     } catch {
-      return next(new AppError({ statusCode: StatusCodes.UNAUTHORIZED, message: UserMessages.ACCESS_TOKEN_INVALID }))
+      // Logout is idempotent: an expired access token must not prevent cookie cleanup.
     }
   }
-  const refresh_token = req.body?.refresh_token
+  const refresh_token = req.cookies?.[env.AUTH_REFRESH_COOKIE_NAME]
   if (refresh_token) {
     try {
       const payload = await verifyToken(refresh_token, env.SECRET_REFRESH_TOKEN)
       await databaseService.refreshTokens.deleteOne({ user_id: new ObjectId(payload.userId), jti: payload.jti })
     } catch {
-      return next(new AppError({ statusCode: StatusCodes.UNAUTHORIZED, message: UserMessages.REFRESH_TOKEN_INVALID }))
+      // The controller still clears an invalid or expired refresh cookie.
     }
   }
   next()
 }
 export const RefreshMiddleware = async (
-  req: Request<ParamsDictionary, any, RefreshRqType>,
+  req: Request,
   res: Response,
   next: NextFunction
 ) => {
-  const refresh_token = req.body.refresh_token
+  const refresh_token = req.cookies?.[env.AUTH_REFRESH_COOKIE_NAME]
+  if (!refresh_token) {
+    clearRefreshTokenCookie(res)
+    return next(new AppError({ statusCode: StatusCodes.UNAUTHORIZED, message: UserMessages.REFRESH_TOKEN_NOT_FOUND }))
+  }
   try {
     const payload = await verifyToken(refresh_token, env.SECRET_REFRESH_TOKEN)
     req.decodeToken = payload
@@ -119,8 +137,10 @@ export const RefreshMiddleware = async (
     if (result) {
       return next()
     }
+    clearRefreshTokenCookie(res)
     next(new AppError({ statusCode: StatusCodes.UNAUTHORIZED, message: UserMessages.REFRESH_TOKEN_INVALID }))
   } catch {
+    clearRefreshTokenCookie(res)
     next(new AppError({ statusCode: StatusCodes.UNAUTHORIZED, message: UserMessages.REFRESH_TOKEN_INVALID }))
   }
 }

@@ -1,57 +1,34 @@
 import apiClient from './axiosClient'
-
-const AUTH_STORAGE_KEYS = ['token', 'accessToken', 'refreshToken', 'user', 'authUser', 'isLoggedIn']
-
-function getStorage(remember) {
-  return remember ? window.localStorage : window.sessionStorage
-}
+import { clearClientAuthSession, saveAccessToken } from '../config/api.js'
+import { markRefreshCookieAvailable, markRefreshCookieUnavailable } from './tokenRefresh.js'
 
 export function clearAuthSession() {
-  if (typeof window === 'undefined') return
-
-  AUTH_STORAGE_KEYS.forEach((key) => {
-    window.localStorage.removeItem(key)
-    window.sessionStorage.removeItem(key)
-  })
+  clearClientAuthSession()
+  markRefreshCookieUnavailable()
 }
 
-export function saveAuthSession(authData, { remember = true } = {}) {
-  if (typeof window === 'undefined') return
-
-  const storage = getStorage(remember)
-  const accessToken = authData?.AccessToken || authData?.accessToken || ''
-  const refreshToken = authData?.RefreshToken || authData?.refreshToken || ''
-  const user = {
-    id: authData?.id || authData?.userId || '',
-  }
-
-  clearAuthSession()
-
-  storage.setItem('accessToken', accessToken)
-  storage.setItem('refreshToken', refreshToken)
-  storage.setItem('token', accessToken)
-  storage.setItem('authUser', JSON.stringify(user))
-  storage.setItem('user', JSON.stringify(user))
-  storage.setItem('isLoggedIn', 'true')
+export function saveAuthSession(authData) {
+  saveAccessToken(authData)
+  markRefreshCookieAvailable()
 }
 
 export async function login(payload, options = {}) {
   const response = await apiClient.post('/auth/login', {
     email: payload.email,
     password: payload.password,
+    remember: options.remember !== false,
   }, { auth: false })
   const authData = response?.data?.data
 
-  if (!authData?.AccessToken || !authData?.RefreshToken) {
+  if (!authData?.AccessToken) {
     throw new Error('Phản hồi đăng nhập không hợp lệ.')
   }
 
-  saveAuthSession(authData, options)
+  saveAuthSession(authData)
 
   return {
     id: authData.id,
     accessToken: authData.AccessToken,
-    refreshToken: authData.RefreshToken,
     message: response?.data?.message || 'Đăng nhập thành công.',
   }
 }
@@ -62,19 +39,19 @@ export async function register(payload, options = {}) {
     email: payload.email,
     password: payload.password,
     confirmPassword: payload.confirmPassword,
+    remember: options.remember !== false,
   }, { auth: false })
   const authData = response?.data?.data
 
-  if (!authData?.AccessToken || !authData?.RefreshToken) {
+  if (!authData?.AccessToken) {
     throw new Error('Phản hồi đăng ký không hợp lệ.')
   }
 
-  saveAuthSession(authData, options)
+  saveAuthSession(authData)
 
   return {
     id: authData.id,
     accessToken: authData.AccessToken,
-    refreshToken: authData.RefreshToken,
     message: response?.data?.message || 'Đăng ký thành công.',
   }
 }
@@ -107,14 +84,21 @@ export async function verifyEmail(payload, options = {}) {
   }, { auth: false })
   const authData = response?.data?.data
 
-  if (authData?.AccessToken && authData?.RefreshToken) {
+  if (authData?.AccessToken) {
     saveAuthSession(authData, options)
   }
 
   return {
     id: authData?.id,
     accessToken: authData?.AccessToken,
-    refreshToken: authData?.RefreshToken,
     message: response?.data?.message || 'Xác minh email thành công.',
+  }
+}
+
+export async function logout() {
+  try {
+    await apiClient.post('/auth/logout', undefined)
+  } finally {
+    clearAuthSession()
   }
 }

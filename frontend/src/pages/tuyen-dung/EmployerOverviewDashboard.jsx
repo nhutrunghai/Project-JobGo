@@ -4,6 +4,7 @@ import DashboardSidebar from '../../components/DashboardSidebar.jsx'
 import EmployerTopBar from '../../components/EmployerTopBar.jsx'
 import Toast from '../../components/Toast.jsx'
 import { loadEmployerDashboardOverview } from '../../data/apiClient.js'
+import { toSafeImageUrl } from '../../utils/safeUrl.js'
 
 const statShells = [
   {
@@ -148,7 +149,8 @@ export default function EmployerOverviewDashboard() {
   }, [location.pathname, location.state, navigate])
 
   const companyName = company?.company_name || 'Nhà tuyển dụng'
-  const showCompanyLogo = Boolean(company?.logo) && !logoFailed
+  const companyLogo = toSafeImageUrl(company?.logo)
+  const showCompanyLogo = Boolean(companyLogo) && !logoFailed
   const companyMeta = useMemo(() => {
     const details = [company?.address, company?.website].filter(Boolean)
     return details.length ? details.join(' · ') : 'Thiết lập hồ sơ công ty để ứng viên tin tưởng hơn.'
@@ -170,7 +172,7 @@ export default function EmployerOverviewDashboard() {
           <div className="flex min-w-0 items-center gap-4">
             {showCompanyLogo ? (
               <img
-                src={company.logo}
+                src={companyLogo}
                 alt={companyName}
                 onError={() => setLogoFailed(true)}
                 className="h-14 w-14 rounded-xl object-cover ring-1 ring-slate-200"

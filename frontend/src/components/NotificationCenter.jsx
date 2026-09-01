@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import DashboardSidebar from './DashboardSidebar.jsx'
+import { formatDateTimeVi as formatDateTime } from '../utils/formatters.js'
 import Toast from './Toast.jsx'
 import {
   emitUnreadNotificationCount,
@@ -8,19 +9,6 @@ import {
   markAllUserNotificationsAsRead,
   markUserNotificationAsRead,
 } from '../api/notificationService.js'
-
-function formatDateTime(value) {
-  if (!value) return 'Chưa có'
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return 'Chưa có'
-  return new Intl.DateTimeFormat('vi-VN', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  }).format(date)
-}
 
 const typeLabelMap = {
   job_application_submitted: 'Ứng tuyển',
@@ -40,7 +28,7 @@ export default function NotificationCenter({ title, activeKey }) {
   const [markingAll, setMarkingAll] = useState(false)
   const [toast, setToast] = useState(null)
 
-  const loadNotifications = async ({ page = pagination.page, limit = pagination.limit, tab = activeTab } = {}) => {
+  const loadNotifications = useCallback(async ({ page = pagination.page, limit = pagination.limit, tab = activeTab } = {}) => {
     const response = await getUserNotifications({
       page,
       limit,
@@ -51,14 +39,14 @@ export default function NotificationCenter({ title, activeKey }) {
     setItems(nextItems)
     setPagination(nextPagination)
     return nextItems
-  }
+  }, [activeTab, pagination.limit, pagination.page])
 
-  const loadUnreadCount = async () => {
+  const loadUnreadCount = useCallback(async () => {
     const count = await getUserNotificationUnreadCount()
     setUnreadCount(count)
     emitUnreadNotificationCount(count)
     return count
-  }
+  }, [])
 
   useEffect(() => {
     let active = true
@@ -74,7 +62,7 @@ export default function NotificationCenter({ title, activeKey }) {
     return () => {
       active = false
     }
-  }, [activeTab, pagination.page, pagination.limit])
+  }, [activeTab, loadNotifications, loadUnreadCount, pagination.limit, pagination.page])
 
   useEffect(() => {
     setPagination((current) => ({ ...current, page: 1 }))

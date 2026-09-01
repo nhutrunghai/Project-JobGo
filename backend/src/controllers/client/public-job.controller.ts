@@ -23,6 +23,7 @@ export const searchPublicJobsController = async (req: Request, res: Response) =>
     location: req.query.location as string | undefined,
     job_type: req.query.job_type as JobType | undefined,
     level: req.query.level as JobLevel | undefined,
+    category_id: req.query.category_id as string | undefined,
     page: Number(req.query.page || 1),
     limit: Number(req.query.limit || 10)
   })

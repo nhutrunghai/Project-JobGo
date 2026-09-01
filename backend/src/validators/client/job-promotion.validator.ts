@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { JobPromotionStatus, JobPromotionType } from '~/constants/enums.js'
+import { JobPromotionStatus } from '~/constants/enums.js'
 import UserMessages from '~/constants/messages/index.js'
 
 const objectIdSchema = (message: string) =>
@@ -10,8 +10,8 @@ const objectIdSchema = (message: string) =>
       message
     })
 
-const jobPromotionTypeValues = [JobPromotionType.HOMEPAGE_FEATURED] as const
 const jobPromotionStatusValues = [
+  JobPromotionStatus.SCHEDULED,
   JobPromotionStatus.ACTIVE,
   JobPromotionStatus.EXPIRED,
   JobPromotionStatus.CANCELLED
@@ -22,9 +22,8 @@ export const purchaseCompanyJobPromotionValidator = z.object({
     jobId: objectIdSchema(UserMessages.JOB_ID_INVALID)
   }),
   body: z.object({
-    type: z.enum(jobPromotionTypeValues).optional().default(JobPromotionType.HOMEPAGE_FEATURED),
-    duration_days: z.coerce.number().int().min(1).max(90),
-    priority: z.coerce.number().int().min(0).max(100000).optional()
+    plan_id: objectIdSchema('Mã gói quảng cáo không hợp lệ.'),
+    duration_days: z.coerce.number().int().min(1).max(365)
   })
 })
 

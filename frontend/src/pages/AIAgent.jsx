@@ -2,34 +2,77 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { getMyProfile } from '../api/userService.js'
 import UserAvatar from '../components/UserAvatar.jsx'
-import JobCategoryNavItem from '../components/JobCategoryNavItem.jsx'
-import { getAccessToken, getRefreshToken } from '../config/api.js'
+import PublicHeader from '../components/layout/PublicHeader.jsx'
+import useCurrentUser from '../hooks/useCurrentUser.js'
+import { useFavoriteStore } from '../stores/useFavoriteStore.js'
+import { toSafeExternalUrl, toSafeResourceUrl } from '../utils/safeUrl.js'
 import {
   deleteChatSession,
   loadChatSessionDetail,
   loadChatSessions,
-  loadFavoriteIds,
   loadJobDetail,
   loadUserResumeDetail,
   loadUserUploadedCvs,
   sendChatMessage,
-  toggleFavoriteJob,
 } from '../data/apiClient.js'
 
 
 const CHAT_SOURCE_CACHE_KEY = 'ai_agent_chat_sources_cache'
+const CHAT_SOURCE_CACHE_VERSION = 1
+const CHAT_SOURCE_CACHE_TTL_MS = 6 * 60 * 60 * 1000
+const CHAT_SOURCE_CACHE_MAX_ENTRIES = 50
+
+const QUICK_CHAT_PROMPTS = [
+  {
+    icon: 'work',
+    title: 'Tìm job hợp CV',
+    description: 'Gợi ý các job phù hợp nhất dựa trên CV đã tải lên JobGo.',
+    prompt: 'Tìm job phù hợp với CV của tôi',
+  },
+  {
+    icon: 'code',
+    title: 'Job theo kỹ năng',
+    description: 'Tìm việc theo Node.js, React, Java, Python hoặc kỹ năng bạn nhập.',
+    prompt: 'Tìm cho tôi các job Node.js TypeScript',
+  },
+  {
+    icon: 'compare_arrows',
+    title: 'So sánh job',
+    description: 'Sau khi tìm job, hỏi AI so sánh mức phù hợp giữa các tin.',
+    prompt: 'So sánh các job vừa tìm được và nói job nào phù hợp hơn',
+  },
+  {
+    icon: 'description',
+    title: 'Đánh giá CV',
+    description: 'Nếu đã upload CV, AI có thể nhận xét điểm mạnh/yếu và job phù hợp.',
+    prompt: 'Đánh giá CV của tôi và gợi ý các job phù hợp',
+  },
+]
 
 function getMessageSourceCacheKey(sessionId, content) {
-  return `${String(sessionId || '').trim()}::${String(content || '').trim()}`
+  const input = `${String(sessionId || '').trim()}::${String(content || '').trim()}`
+  let hash = 2166136261
+  for (let index = 0; index < input.length; index += 1) {
+    hash ^= input.charCodeAt(index)
+    hash = Math.imul(hash, 16777619)
+  }
+  return `source_${(hash >>> 0).toString(36)}`
 }
 
 function readChatSourceCache() {
   try {
-    const raw = window.localStorage.getItem(CHAT_SOURCE_CACHE_KEY)
-    const parsed = raw ? JSON.parse(raw) : {}
-    return parsed && typeof parsed === 'object' ? parsed : {}
+    window.localStorage.removeItem(CHAT_SOURCE_CACHE_KEY)
+    const raw = window.sessionStorage.getItem(CHAT_SOURCE_CACHE_KEY)
+    const parsed = raw ? JSON.parse(raw) : null
+    if (parsed?.version !== CHAT_SOURCE_CACHE_VERSION || !parsed.entries || typeof parsed.entries !== 'object') return {}
+
+    const now = Date.now()
+    return Object.fromEntries(
+      Object.entries(parsed.entries).filter(([, entry]) => (
+        Array.isArray(entry?.sources) && Number(entry.expiresAt) > now
+      )),
+    )
   } catch {
     return {}
   }
@@ -37,28 +80,34 @@ function readChatSourceCache() {
 
 function writeChatSourceCache(cache) {
   try {
-    window.localStorage.setItem(CHAT_SOURCE_CACHE_KEY, JSON.stringify(cache))
+    const entries = Object.entries(cache)
+      .sort(([, left], [, right]) => Number(right?.createdAt || 0) - Number(left?.createdAt || 0))
+      .slice(0, CHAT_SOURCE_CACHE_MAX_ENTRIES)
+    window.sessionStorage.setItem(CHAT_SOURCE_CACHE_KEY, JSON.stringify({
+      version: CHAT_SOURCE_CACHE_VERSION,
+      entries: Object.fromEntries(entries),
+    }))
   } catch {
+    // Storage can be unavailable in private browsing or restricted webviews.
   }
 }
 
 function saveChatSourcesToCache(sessionId, content, sources = []) {
   if (!sessionId || !content || !Array.isArray(sources) || !sources.length) return
   const cache = readChatSourceCache()
-  cache[getMessageSourceCacheKey(sessionId, content)] = sources
+  cache[getMessageSourceCacheKey(sessionId, content)] = {
+    sources: sources.slice(0, 20),
+    createdAt: Date.now(),
+    expiresAt: Date.now() + CHAT_SOURCE_CACHE_TTL_MS,
+  }
   writeChatSourceCache(cache)
 }
 
 function getCachedChatSources(sessionId, content) {
   const cached = readChatSourceCache()[getMessageSourceCacheKey(sessionId, content)]
-  return Array.isArray(cached) ? cached : []
+  return Array.isArray(cached?.sources) ? cached.sources : []
 }
 
-const homeNav = [
-  { label: 'Việc làm IT', path: '/search-jobs', icon: 'work' },
-  { label: 'Bài viết', path: '/discussions', icon: 'article' },
-  { label: 'AI Agent', path: '/ai-agent', icon: 'smart_toy' },
-]
 function createLocalId(prefix = 'chat') {
   return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`
 }
@@ -363,9 +412,11 @@ function MarkdownMessage({ content, isUser, isError }) {
             ),
           pre: ({ children }) => <pre className="mt-3 overflow-x-auto">{children}</pre>,
           a: ({ href, children }) => (
-            <a href={href} target="_blank" rel="noreferrer" className="font-semibold text-[#2489d2] underline decoration-blue-200 underline-offset-2">
-              {children}
-            </a>
+            toSafeExternalUrl(href) ? (
+              <a href={toSafeExternalUrl(href)} target="_blank" rel="noopener noreferrer" className="font-semibold text-[#2489d2] underline decoration-blue-200 underline-offset-2">
+                {children}
+              </a>
+            ) : <span>{children}</span>
           ),
           hr: () => <hr className="my-4 border-slate-200" />,
         }}
@@ -428,6 +479,47 @@ function MessageItem({ message, profileName, profileAvatar, onCopy, onPreviewRes
   )
 }
 
+
+function EmptyChatHero({ onPromptClick, disabled }) {
+  return (
+    <div className="flex min-h-[calc(100vh-270px)] items-center justify-center px-2 py-10">
+      <div className="w-full max-w-4xl text-center">
+        <div className="mx-auto mb-5 flex h-24 w-24 items-center justify-center rounded-[32px] bg-[linear-gradient(135deg,#e7fbfd,#eef4ff)] text-[#20c3d0] shadow-[0_22px_60px_-30px_rgba(36,137,210,0.8)] ring-1 ring-cyan-100">
+          <span className="material-symbols-outlined text-[52px]">neurology</span>
+        </div>
+        <p className="text-[13px] font-bold uppercase tracking-[0.22em] text-[#2489d2]">CHAT A.I+</p>
+        <h2 className="mt-2 text-[34px] font-black tracking-tight text-slate-950 md:text-[46px]">Tôi có thể giúp gì cho bạn?</h2>
+        <p className="mx-auto mt-3 max-w-2xl text-[15px] leading-7 text-slate-500">
+          Hỏi về job IT, tìm việc theo kỹ năng, so sánh tin tuyển dụng hoặc nhờ đánh giá CV đã tải lên JobGo.
+        </p>
+
+        <div className="mt-8 grid gap-3 text-left sm:grid-cols-2">
+          {QUICK_CHAT_PROMPTS.map((item) => (
+            <button
+              key={item.title}
+              type="button"
+              onClick={() => onPromptClick(item.prompt)}
+              disabled={disabled}
+              className="group rounded-[22px] border border-slate-200 bg-white p-4 text-left shadow-[0_18px_42px_-34px_rgba(36,137,210,0.75)] transition hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-[0_24px_54px_-34px_rgba(36,137,210,0.9)] disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <div className="flex items-start gap-3">
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-blue-50 text-[#2489d2] transition group-hover:bg-[#2489d2] group-hover:text-white">
+                  <span className="material-symbols-outlined text-[22px]">{item.icon}</span>
+                </div>
+                <div className="min-w-0">
+                  <p className="text-[15px] font-extrabold text-slate-950">{item.title}</p>
+                  <p className="mt-1 text-[13px] leading-6 text-slate-500">{item.description}</p>
+                  <p className="mt-3 text-[12px] font-semibold text-[#2b59ff]">{item.prompt}</p>
+                </div>
+              </div>
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function CvPreviewModal({ resume, onClose }) {
   if (!resume) return null
 
@@ -441,7 +533,7 @@ function CvPreviewModal({ resume, onClose }) {
           </div>
           <div className="flex items-center gap-2">
             <a
-              href={resume.cvUrl}
+              href={toSafeResourceUrl(resume.cvUrl) || undefined}
               target="_blank"
               rel="noreferrer"
               className="inline-flex h-9 items-center rounded-full border border-slate-200 px-3 text-xs font-bold text-slate-700 transition hover:bg-slate-50"
@@ -457,7 +549,12 @@ function CvPreviewModal({ resume, onClose }) {
             </button>
           </div>
         </div>
-        <iframe title={resume.title || 'CV preview'} src={resume.cvUrl} className="min-h-0 flex-1 border-0 bg-slate-50" />
+        <iframe
+          title={resume.title || 'CV preview'}
+          src={toSafeResourceUrl(resume.cvUrl) || undefined}
+          sandbox="allow-same-origin allow-downloads"
+          className="min-h-0 flex-1 border-0 bg-slate-50"
+        />
       </div>
     </div>
   )
@@ -465,13 +562,14 @@ function CvPreviewModal({ resume, onClose }) {
 
 export default function AIAgent() {
   const navigate = useNavigate()
+  const session = useCurrentUser()
+  const { isAuthenticated, profileName, profileAvatar } = session
+  const favoriteIds = useFavoriteStore((state) => state.favoriteIds)
+  const toggleFavoriteInStore = useFavoriteStore((state) => state.toggle)
 
   const [prompt, setPrompt] = useState('')
-  const [userProfile, setUserProfile] = useState(null)
-  const [userMenuOpen, setUserMenuOpen] = useState(false)
-  const [isAuthenticated, setIsAuthenticated] = useState(() => Boolean(getAccessToken() || getRefreshToken()))
   const [conversations, setConversations] = useState([])
-  const [activeConversationId, setActiveConversationId] = useState('')
+  const [, setActiveConversationId] = useState('')
   const [activeSessionId, setActiveSessionId] = useState('')
   const [messages, setMessages] = useState([buildWelcomeMessage()])
   const [resumeOptions, setResumeOptions] = useState([])
@@ -482,7 +580,6 @@ export default function AIAgent() {
   const [sendingStartedAt, setSendingStartedAt] = useState(null)
   const [elapsedSeconds, setElapsedSeconds] = useState(0)
   const [previewResume, setPreviewResume] = useState(null)
-  const [favoriteIds, setFavoriteIds] = useState(() => new Set())
   const [chatError, setChatError] = useState('')
   const [isLoadingSessions, setIsLoadingSessions] = useState(false)
   const [isLoadingConversation, setIsLoadingConversation] = useState(false)
@@ -492,7 +589,6 @@ export default function AIAgent() {
     let active = true
 
     if (!isAuthenticated) {
-      setUserProfile(null)
       setResumeOptions([])
       setSelectedResumeId('')
       setConversations([])
@@ -503,14 +599,6 @@ export default function AIAgent() {
         active = false
       }
     }
-
-    getMyProfile()
-      .then((profile) => {
-        if (active) setUserProfile(profile)
-      })
-      .catch(() => {
-        if (active) setUserProfile(null)
-      })
 
     loadUserUploadedCvs().then((items) => {
       if (!active) return
@@ -616,22 +704,6 @@ export default function AIAgent() {
   }, [activeSessionId, isAuthenticated])
 
   useEffect(() => {
-    let active = true
-
-    loadFavoriteIds()
-      .then((ids) => {
-        if (active) setFavoriteIds(new Set(ids))
-      })
-      .catch(() => {
-        if (active) setFavoriteIds(new Set())
-      })
-
-    return () => {
-      active = false
-    }
-  }, [isAuthenticated])
-
-  useEffect(() => {
     if (!isSending || !sendingStartedAt) {
       setElapsedSeconds(0)
       return undefined
@@ -646,24 +718,10 @@ export default function AIAgent() {
     return () => window.clearInterval(timer)
   }, [isSending, sendingStartedAt])
 
-  const profileName = userProfile?.fullName || userProfile?.username || 'Tài khoản người dùng'
-  const profileHandle = userProfile?.username ? `@${userProfile.username}` : '@mycoder-user'
-  const profileAvatar = userProfile?.avatar || ''
   const activeResumeTitle = useMemo(
     () => resumeOptions.find((item) => item.id === selectedResumeId)?.title || '',
     [resumeOptions, selectedResumeId]
   )
-
-  const handleLogout = () => {
-    ;['token', 'accessToken', 'refreshToken', 'user', 'authUser', 'isLoggedIn'].forEach((key) => {
-      localStorage.removeItem(key)
-      sessionStorage.removeItem(key)
-    })
-    setUserMenuOpen(false)
-    setIsAuthenticated(false)
-    setUserProfile(null)
-    navigate('/login')
-  }
 
   const syncConversationSummary = (sessionId, userText, assistantText = '') => {
     if (!sessionId) return
@@ -748,30 +806,18 @@ export default function AIAgent() {
   const handleToggleFavorite = (jobId) => {
     if (!jobId) return
 
-    const shouldFavorite = !favoriteIds.has(jobId)
-    setFavoriteIds((current) => {
-      const next = new Set(current)
-      if (shouldFavorite) next.add(jobId)
-      else next.delete(jobId)
-      return next
-    })
+    if (!isAuthenticated) {
+      navigate('/login', { state: { from: { pathname: '/ai-agent', search: '' } } })
+      return
+    }
 
-    toggleFavoriteJob(jobId, shouldFavorite).catch(() => {
-      setFavoriteIds((current) => {
-        const next = new Set(current)
-        if (shouldFavorite) next.delete(jobId)
-        else next.add(jobId)
-        return next
-      })
-
-      if (!isAuthenticated) {
-        navigate('/login', { state: { from: { pathname: '/ai-agent', search: '' } } })
-      }
+    void toggleFavoriteInStore(jobId).catch((error) => {
+      console.error('Failed to update favorite job', error)
     })
   }
 
-  const handleSend = async () => {
-    const text = prompt.trim()
+  const handleSend = async (presetPrompt) => {
+    const text = String(presetPrompt || prompt).trim()
     if (isSending) return
     if (!isAuthenticated) {
       setChatError('Bạn cần đăng nhập để sử dụng AI Agent.')
@@ -845,131 +891,7 @@ export default function AIAgent() {
 
   return (
     <div className="min-h-screen bg-[linear-gradient(180deg,#dff3ff_0%,#eef8ff_45%,#f8fbff_100%)] text-slate-900">
-      <nav className="sticky top-0 z-50 w-full border-b border-slate-100 bg-white/95 backdrop-blur-md">
-        <div className="mx-auto flex max-w-[1440px] items-center justify-between px-4 py-2 sm:px-6">
-          <div className="flex min-w-0 items-center gap-6">
-            <Link to="/" className="flex min-w-0 items-center text-lg font-bold tracking-tight text-[#2b59ff] sm:text-xl">
-              <span className="material-symbols-outlined mr-1 text-2xl">code</span>
-              MYCODER
-            </Link>
-            <div className="hidden items-center gap-4 text-[13.5px] font-medium text-slate-600 lg:flex">
-              {homeNav.map((item) => (
-                item.path === '/search-jobs' ? (
-                  <JobCategoryNavItem key={item.label} item={item} active={item.path === '/ai-agent'} />
-                ) : (
-                  <Link
-                    key={item.label}
-                    className={`nav-link-animate flex items-center gap-1.5 ${item.path === '/ai-agent' ? 'font-semibold text-[#2b59ff]' : ''}`}
-                    to={item.path}
-                  >
-                    <span className="material-symbols-outlined text-[17px]">{item.icon}</span>
-                    {item.label}
-                  </Link>
-                )
-              ))}
-            </div>
-          </div>
-
-          <div className="flex shrink-0 items-center gap-2 sm:gap-3">
-            {isAuthenticated ? (
-              <>
-                <Link
-                  to="/notifications"
-                  className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-100 text-slate-600 transition hover:bg-slate-200 sm:h-10 sm:w-10"
-                >
-                  <span className="material-symbols-outlined">notifications</span>
-                </Link>
-                <Link
-                  to="/messages"
-                  className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-100 text-slate-600 transition hover:bg-slate-200 sm:h-10 sm:w-10"
-                >
-                  <span className="material-symbols-outlined">chat</span>
-                </Link>
-                <div className="relative">
-                  <button
-                    type="button"
-                    onClick={() => setUserMenuOpen((prev) => !prev)}
-                    className="block h-9 w-9 overflow-hidden rounded-full border border-slate-200 bg-slate-200 transition hover:ring-2 hover:ring-blue-100"
-                  >
-                    <UserAvatar src={profileAvatar} name={profileName} className="h-full w-full" textClassName="text-xs" />
-                  </button>
-                  {userMenuOpen && (
-                    <div className="absolute right-0 top-12 z-[60] w-56 rounded-2xl border border-slate-200 bg-white p-2 shadow-[0_18px_40px_-24px_rgba(15,23,42,0.28)]">
-                      <div className="border-b border-slate-100 px-3 py-2">
-                        <p className="truncate text-sm font-bold text-slate-800">{profileName}</p>
-                        <p className="truncate text-xs text-slate-400">{profileHandle}</p>
-                      </div>
-                      <div className="pt-2">
-                        <Link
-                          to="/dashboard"
-                          onClick={() => setUserMenuOpen(false)}
-                          className="flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
-                        >
-                          <span className="material-symbols-outlined text-[18px]">dashboard</span>
-                          Dashboard
-                        </Link>
-                        <Link
-                          to="/favorites"
-                          onClick={() => setUserMenuOpen(false)}
-                          className="flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
-                        >
-                          <span className="material-symbols-outlined text-[18px]">favorite</span>
-                          Việc yêu thích
-                        </Link>
-                        <Link
-                          to="/user/settings"
-                          onClick={() => setUserMenuOpen(false)}
-                          className="flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
-                        >
-                          <span className="material-symbols-outlined text-[18px]">settings</span>
-                          Cài đặt
-                        </Link>
-                        <button
-                          type="button"
-                          onClick={handleLogout}
-                          className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm font-medium text-rose-600 transition hover:bg-rose-50"
-                        >
-                          <span className="material-symbols-outlined text-[18px]">logout</span>
-                          Đăng xuất
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </>
-            ) : (
-              <>
-                <Link
-                  to="/login"
-                  className="inline-flex h-9 items-center justify-center rounded-full border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 transition hover:border-sky-200 hover:text-sky-800 sm:h-10 sm:px-4 sm:text-sm"
-                >
-                  Đăng nhập
-                </Link>
-                <Link
-                  to="/register"
-                  className="inline-flex h-9 items-center justify-center rounded-full bg-[#2b59ff] px-3 text-xs font-bold text-white transition hover:bg-[#1f4bf1] sm:h-10 sm:px-4 sm:text-sm"
-                >
-                  Đăng ký
-                </Link>
-              </>
-            )}
-          </div>
-        </div>
-        <div className="flex gap-2 overflow-x-auto px-4 pb-3 lg:hidden">
-          {homeNav.map((item) => (
-            <Link
-              key={item.label}
-              to={item.path}
-              className={`inline-flex h-10 shrink-0 items-center gap-2 rounded-full px-3 text-xs font-bold transition ${
-                item.path === '/ai-agent' ? 'bg-blue-600 text-white' : 'bg-slate-50 text-slate-600 hover:bg-blue-50 hover:text-blue-700'
-              }`}
-            >
-              <span className="material-symbols-outlined text-[18px]">{item.icon}</span>
-              {item.label}
-            </Link>
-          ))}
-        </div>
-      </nav>
+      <PublicHeader session={session} activeNav="/ai-agent" />
 
       <main className="h-[calc(100vh-121px)] px-3 py-3 lg:h-[calc(100vh-57px)] md:px-4 md:py-4">
         <div className="mx-auto h-full max-w-[1880px] rounded-[20px] border border-[#d8ebff] bg-white p-2 shadow-[0_20px_60px_-38px_rgba(36,137,210,0.45)] lg:p-4">
@@ -1191,18 +1113,22 @@ export default function AIAgent() {
                   {isLoadingConversation && (
                     <div className="pl-11 text-[13px] font-medium text-slate-500">Đang tải nội dung session...</div>
                   )}
-                  {messages.map((message) => (
-                    <MessageItem
-                      key={message.id}
-                      message={message}
-                      profileName={profileName}
-                      profileAvatar={profileAvatar}
-                      onCopy={handleCopy}
-                      onPreviewResume={setPreviewResume}
-                      favoriteIds={favoriteIds}
-                      onToggleFavorite={handleToggleFavorite}
-                    />
-                  ))}
+                  {messages.length === 1 && messages[0]?.id === 'welcome' && !isLoadingConversation ? (
+                    <EmptyChatHero onPromptClick={handleSend} disabled={isSending} />
+                  ) : (
+                    messages.map((message) => (
+                      <MessageItem
+                        key={message.id}
+                        message={message}
+                        profileName={profileName}
+                        profileAvatar={profileAvatar}
+                        onCopy={handleCopy}
+                        onPreviewResume={setPreviewResume}
+                        favoriteIds={favoriteIds}
+                        onToggleFavorite={handleToggleFavorite}
+                      />
+                    ))
+                  )}
 
                   {isSending && (
                     <div className="flex items-center gap-3 pl-11 text-[13px] font-medium text-slate-500">
@@ -1237,7 +1163,7 @@ export default function AIAgent() {
                             handleSend()
                           }
                         }}
-                        className="h-9 w-full border-0 bg-transparent text-[14px] text-slate-700 outline-none"
+                        className="h-9 w-full border-0 bg-transparent text-[14px] text-slate-700 outline-none ring-0 focus:border-transparent focus:outline-none focus:ring-0 focus:ring-offset-0"
                         placeholder="Hỏi về job IT, so sánh tin tuyển dụng hoặc nhờ đánh giá CV..."
                       />
                     </div>

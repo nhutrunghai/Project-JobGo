@@ -18,6 +18,9 @@ import notificationService from '~/services/client/notification.service'
 type ApplyJobBody = {
   cv_id: string
   cover_letter?: string
+  full_name?: string
+  email?: string
+  phone?: string
 }
 
 type UpdateCompanyApplicationStatusBody = {
@@ -37,9 +40,9 @@ export const applyJobController = async (
     { projection: { fullName: 1, email: 1, phone: 1, skills: 1 } }
   )
   const resumeSnapshot = {
-    full_name: candidate?.fullName,
-    email: candidate?.email,
-    phone: candidate?.phone,
+    full_name: req.body.full_name || candidate?.fullName,
+    email: req.body.email || candidate?.email,
+    phone: req.body.phone || candidate?.phone,
     cv_url: resume.cv_url,
     skills: candidate?.skills
   }
@@ -143,18 +146,25 @@ export const getCompanyJobApplicationsController = async (
   return res.status(StatusCodes.OK).json({
     status: 'success',
     data: {
-      applications: result.applications.map((application) => ({
-        _id: application._id,
-        candidate_id: application.candidate_id,
-        resume_snapshot: {
-          full_name: application.resume_snapshot?.full_name,
-          email: application.resume_snapshot?.email,
-          phone: application.resume_snapshot?.phone,
-          cv_url: application.resume_snapshot?.cv_url
-        },
-        status: application.status,
-        applied_at: application.applied_at,
-        updated_at: application.updated_at
+      applications: await Promise.all(result.applications.map(async (application) => {
+        const candidate = await databaseService.users.findOne(
+          { _id: application.candidate_id },
+          { projection: { email: 1 } },
+        )
+        const snapshot = application.resume_snapshot || {}
+        return {
+          _id: application._id,
+          candidate_id: application.candidate_id,
+          resume_snapshot: {
+            full_name: snapshot.full_name,
+            email: snapshot.email || candidate?.email,
+            phone: snapshot.phone,
+            cv_url: snapshot.cv_url
+          },
+          status: application.status,
+          applied_at: application.applied_at,
+          updated_at: application.updated_at
+        }
       })),
       pagination: result.pagination
     }

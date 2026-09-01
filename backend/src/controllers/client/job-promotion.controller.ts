@@ -1,20 +1,21 @@
 import { Request, Response } from 'express'
 import { StatusCodes } from 'http-status-codes'
 import { ObjectId } from 'mongodb'
-import { JobPromotionStatus, JobPromotionType } from '~/constants/enums.js'
+import { JobPromotionStatus } from '~/constants/enums.js'
 import UserMessages from '~/constants/messages/index.js'
 import { CompanyLocals } from '~/types/http/response.type.js'
 import companyJobPromotionService from '~/services/client/job-promotion.service.js'
 
 export const getCompanyPromotionPlansController = async (req: Request, res: Response) => {
+  const plans = await companyJobPromotionService.getPlans()
   return res.status(StatusCodes.OK).json({
     status: 'success',
-    data: companyJobPromotionService.getPlans()
+    data: plans
   })
 }
 
 export const purchaseCompanyJobPromotionController = async (
-  req: Request<any, any, { type?: JobPromotionType; duration_days: number; priority?: number }>,
+  req: Request<any, any, { plan_id: string; duration_days: number }>,
   res: Response<unknown, CompanyLocals>
 ) => {
   const userId = new ObjectId(req.decodeToken?.userId as string)
@@ -24,9 +25,8 @@ export const purchaseCompanyJobPromotionController = async (
     userId,
     companyId: company._id!,
     jobId,
-    type: req.body.type || JobPromotionType.HOMEPAGE_FEATURED,
-    durationDays: req.body.duration_days,
-    priority: req.body.priority
+    planId: new ObjectId(req.body.plan_id),
+    durationDays: req.body.duration_days
   })
 
   return res.status(StatusCodes.CREATED).json({

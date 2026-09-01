@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { forgotPassword, login, register, resetPassword } from '../api/authService.js'
 import Toast from '../components/Toast.jsx'
+import useCurrentUser from '../hooks/useCurrentUser.js'
 
 const authContent = {
   login: {
@@ -90,6 +91,7 @@ function AuthPortal({ mode }) {
   const content = authContent[mode]
   const location = useLocation()
   const navigate = useNavigate()
+  const { refreshSession } = useCurrentUser()
   const [searchParams] = useSearchParams()
   const [toast, setToast] = useState(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -216,6 +218,7 @@ function AuthPortal({ mode }) {
       }
 
       if (!isForgot) {
+        await refreshSession({ force: true })
         const stateFrom = location.state?.from
         const defaultRedirect = '/'
         const redirectTo = searchParams.get('redirect') || (stateFrom ? `${stateFrom.pathname || ''}${stateFrom.search || ''}` : defaultRedirect) || defaultRedirect

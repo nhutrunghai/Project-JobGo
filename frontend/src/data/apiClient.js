@@ -1,7 +1,7 @@
 import { refreshAccessToken } from '../api/tokenRefresh.js'
 import { genUploader } from 'uploadthing/client'
 import { repairText } from '../utils/textRepair.js'
-import { buildApiUrl, clearStoredAuthSession, createJsonHeaders, getAccessToken, getApiOrigin, getRefreshToken } from '../config/api'
+import { buildApiUrl, clearClientAuthSession, createJsonHeaders, getAccessToken, getApiOrigin } from '../config/api'
 
 const FAVORITE_STORAGE_KEY = 'favorite_job_ids'
 const FAVORITE_CACHE_TTL = 30000
@@ -12,7 +12,6 @@ const EMPLOYER_RECENT_JOB_LIMIT = 8
 const EMPLOYER_RECENT_APPLICATION_LIMIT = 5
 let favoriteIdsCache = null
 let mockJobsPromise = null
-let mockHomePromise = null
 let mockProfileEditPromise = null
 let employerOverviewCache = null
 const jsonGetCache = new Map()
@@ -78,8 +77,8 @@ async function requestJson(path, options = {}) {
       })
       res = await runJsonRequest(path, options, retryHeaders)
     } catch (error) {
-      clearStoredAuthSession()
-      if (typeof window !== 'undefined' && window.location.pathname !== '/login') {
+      clearClientAuthSession()
+      if (options.redirectOnUnauthorized !== false && typeof window !== 'undefined' && window.location.pathname !== '/login') {
         window.location.assign(`/login?redirect=${encodeURIComponent(window.location.pathname + window.location.search)}`)
       }
       throw error
@@ -133,11 +132,6 @@ async function requestJson(path, options = {}) {
 async function loadMockJobs() {
   mockJobsPromise ??= fetch('/api/jobs.json').then((res) => (res.ok ? res.json() : { jobDetails: [] })).catch(() => ({ jobDetails: [] }))
   return mockJobsPromise
-}
-
-async function loadMockHome() {
-  mockHomePromise ??= fetch('/api/home.json').then((res) => res.json())
-  return mockHomePromise
 }
 
 async function loadMockProfileEdit() {
@@ -306,6 +300,9 @@ function normalizePublicJob(job) {
     responsibilities,
     requirementsList: requirements,
     benefits,
+    richDescription: job.description || '',
+    richRequirements: job.requirements || '',
+    richBenefits: job.benefits || '',
     companyDescription: repairText(company.description || '\u0110ang c\u1eadp nh\u1eadt'),
     companyFacts: {
       size: repairText(company.size || company.company_size || ''),
@@ -344,6 +341,9 @@ function normalizeJobDetail(job, company, myApplication) {
     responsibilities,
     requirements,
     benefits,
+    richDescription: job.description || '',
+    richRequirements: job.requirements || '',
+    richBenefits: job.benefits || '',
     companyDescription: repairText(company?.description || '\u0110ang c\u1eadp nh\u1eadt'),
     companyFacts: {
       size: repairText(company?.size || company?.company_size || ''),
@@ -731,17 +731,25 @@ export async function loadAppliedJobStats() {
   return buildAppliedJobStats(jobs)
 }
 
-export async function withdrawAppliedJob(jobId) {
+export async function withdrawAppliedJob(jobId, { redirectOnUnauthorized = true } = {}) {
   const normalizedJobId = normalizeObjectId(jobId).trim()
   if (!isMongoObjectId(normalizedJobId)) {
     throw new Error('Tin tuyen dung nay chua co ma backend hop le de rut ho so.')
   }
 
-  const response = await requestJson(`/jobs/${normalizedJobId}/withdraw`, { method: 'PATCH', auth: true })
+  const response = await requestJson(`/jobs/${normalizedJobId}/withdraw`, {
+    method: 'PATCH',
+    auth: true,
+    redirectOnUnauthorized,
+  })
   return response?.data
 }
 
-export async function applyToJob(jobId, { cvId, coverLetter } = {}) {
+export async function applyToJob(
+  jobId,
+  { cvId, coverLetter, fullName, email, phone } = {},
+  { redirectOnUnauthorized = true } = {},
+) {
   const normalizedJobId = normalizeObjectId(jobId).trim()
   if (!isMongoObjectId(normalizedJobId)) {
     throw new Error('Tin tuyen dung nay chua co ma backend hop le de ung tuyen. Vui long mo tin tuyen dung tu ket qua tim kiem backend.')
@@ -758,9 +766,13 @@ export async function applyToJob(jobId, { cvId, coverLetter } = {}) {
   const response = await requestJson(`/jobs/${normalizedJobId}/apply`, {
     method: 'POST',
     auth: true,
+    redirectOnUnauthorized,
     body: JSON.stringify({
       cv_id: normalizedCvId,
       cover_letter: String(coverLetter || '').trim() || undefined,
+      full_name: String(fullName || '').trim() || undefined,
+      email: String(email || '').trim() || undefined,
+      phone: String(phone || '').trim() || undefined,
     }),
   })
 
@@ -791,7 +803,7 @@ export async function sendChatMessage({ message, sessionId, resumeId } = {}) {
 
   const response = await requestJson('/chat/jobs', {
     method: 'POST',
-    auth: Boolean(getAccessToken() || getRefreshToken()),
+    auth: Boolean(getAccessToken()),
     body: JSON.stringify(body),
   })
 
@@ -987,6 +999,7 @@ function getCompanyApplicationsFromPayload(payload) {
 }
 
 function getEmployerApplicantInitials(name) {
+  if (/^ứng\s+viên\b/i.test(String(name || '').trim())) return 'UV'
   const parts = String(name || '')
     .trim()
     .split(/\s+/)
@@ -1547,9 +1560,9 @@ export async function toggleFavoriteJob(jobId, shouldFavorite) {
   return true
 }
 
-export async function loadUserUploadedCvs() {
+export async function loadUserUploadedCvs({ redirectOnUnauthorized = true, throwOnError = false } = {}) {
   try {
-    const payload = await requestJson('/user/resumes', { auth: true })
+    const payload = await requestJson('/user/resumes', { auth: true, redirectOnUnauthorized })
     const items = Array.isArray(payload?.data) ? payload.data : []
     return items.map((item) => {
       const resumeId = normalizeObjectId(item._id || item.id || item.resume_id)
@@ -1568,7 +1581,8 @@ export async function loadUserUploadedCvs() {
         updatedAt: item.updated_at || '',
       }
     })
-  } catch {
+  } catch (error) {
+    if (throwOnError) throw error
     return []
   }
 }

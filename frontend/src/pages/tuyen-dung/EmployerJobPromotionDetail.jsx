@@ -3,48 +3,14 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import Toast from '../../components/Toast.jsx'
 import DashboardSidebar from '../../components/DashboardSidebar.jsx'
 import EmployerTopBar from '../../components/EmployerTopBar.jsx'
+import { formatCurrencyVi as formatMoney, formatDateTimeVi as formatDateTime } from '../../utils/formatters.js'
+import {
+  getPromotionDurationDays,
+  PROMOTION_STATUS_LABELS,
+  PROMOTION_STATUS_TONES,
+} from '../../features/job-promotions/presentation.js'
 import EmployerSectionTabs from '../../components/EmployerSectionTabs.jsx'
 import { cancelCompanyJobPromotion, getCompanyJobPromotionDetail } from '../../api/companyService.js'
-
-const statusLabelMap = {
-  active: 'Đang hiển thị',
-  expired: 'Đã hết hạn',
-  cancelled: 'Đã hủy',
-}
-
-const statusToneMap = {
-  active: 'border-emerald-200 bg-emerald-50 text-emerald-700',
-  expired: 'border-amber-200 bg-amber-50 text-amber-700',
-  cancelled: 'border-rose-200 bg-rose-50 text-rose-700',
-}
-
-function formatDateTime(value) {
-  if (!value) return 'Chưa có'
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return 'Chưa có'
-  return new Intl.DateTimeFormat('vi-VN', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  }).format(date)
-}
-
-function formatMoney(value, currency = 'VND') {
-  return new Intl.NumberFormat('vi-VN', {
-    style: 'currency',
-    currency,
-    maximumFractionDigits: currency === 'VND' ? 0 : 2,
-  }).format(Number(value || 0))
-}
-
-function getDurationDays(promotion) {
-  const startsAt = new Date(promotion?.starts_at || 0)
-  const endsAt = new Date(promotion?.ends_at || 0)
-  if (Number.isNaN(startsAt.getTime()) || Number.isNaN(endsAt.getTime())) return 0
-  return Math.max(1, Math.round((endsAt.getTime() - startsAt.getTime()) / 86400000))
-}
 
 function InfoCard({ label, value }) {
   return (
@@ -125,18 +91,18 @@ export default function EmployerJobPromotionDetail() {
                     <h2 className="text-[24px] font-extrabold tracking-tight text-slate-950">{promotion.job?.title || 'Tin tuyển dụng'}</h2>
                     <p className="mt-1 text-sm text-slate-500">{promotion.job?.location || 'Chưa có địa điểm'} • {promotion.job?.level || 'Chưa có cấp bậc'}</p>
                   </div>
-                  <span className={`inline-flex rounded-lg border px-3 py-1.5 text-sm font-semibold ${statusToneMap[promotion.status] || statusToneMap.active}`}>
-                    {statusLabelMap[promotion.status] || promotion.status}
+                  <span className={`inline-flex rounded-lg border px-3 py-1.5 text-sm font-semibold ${PROMOTION_STATUS_TONES[promotion.status] || PROMOTION_STATUS_TONES.active}`}>
+                    {PROMOTION_STATUS_LABELS[promotion.status] || promotion.status}
                   </span>
                 </div>
 
                 <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
                   <InfoCard label="Mã quảng cáo" value={promotion._id} />
-                  <InfoCard label="Loại" value={promotion.type === 'homepage_featured' ? 'Quảng cáo trang chủ' : promotion.type} />
+                  <InfoCard label="Gói" value={promotion.plan_snapshot?.name || (promotion.type === 'homepage_featured' ? 'Quảng cáo trang chủ' : promotion.type)} />
                   <InfoCard label="Độ ưu tiên" value={promotion.priority} />
                   <InfoCard label="Bắt đầu" value={formatDateTime(promotion.starts_at)} />
                   <InfoCard label="Kết thúc" value={formatDateTime(promotion.ends_at)} />
-                  <InfoCard label="Thời lượng" value={`${getDurationDays(promotion)} ngày`} />
+                  <InfoCard label="Thời lượng" value={`${getPromotionDurationDays(promotion)} ngày`} />
                   <InfoCard label="Đã thanh toán" value={formatMoney(promotion.amount_paid, promotion.currency)} />
                   <InfoCard label="Trạng thái job" value={promotion.job?.status || 'Chưa có'} />
                   <InfoCard label="Kiểm duyệt admin" value={promotion.job?.moderation_status || 'Chưa có'} />
@@ -149,7 +115,7 @@ export default function EmployerJobPromotionDetail() {
                   <div className="mt-4 flex flex-col gap-2">
                     <button
                       type="button"
-                      disabled={promotion.status !== 'active' || cancelling}
+                      disabled={!['active', 'scheduled'].includes(promotion.status) || cancelling}
                       onClick={handleCancelPromotion}
                       className="inline-flex h-11 items-center justify-center rounded-lg border border-rose-200 bg-rose-50 px-4 text-sm font-semibold text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-50"
                     >

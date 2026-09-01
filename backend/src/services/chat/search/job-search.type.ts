@@ -3,10 +3,11 @@ import { JobLevel, JobType } from '~/constants/enums'
 import Job from '~/models/schema/client/jobs.schema'
 
 export type SearchPublicJobsParams = {
-  q: string
+  q?: string
   location?: string
   job_type?: JobType
   level?: JobLevel
+  category_id?: string
   page: number
   limit: number
 }

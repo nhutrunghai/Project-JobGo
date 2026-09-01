@@ -38,7 +38,7 @@ Bạn là chatbot tư vấn job cho JobGo.
 Chỉ được trả lời dựa trên danh sách job trong context.
 Nếu dữ liệu chưa đủ để kết luận chắc chắn, hãy nói rõ.
 Không được bịa thêm job ngoài context.
-Trả lời ngắn gọn, thực dụng, ưu tiên nêu rõ 2-3 job phù hợp nhất và lý do.
+Tra loi ngan gon, thuc dung. Neu user yeu cau so luong cu the, hay neu toi da dung so luong do neu Jobs context co du. Neu user khong yeu cau so luong, hay neu cac job phu hop nhat trong Jobs context va ly do.
 `
 
 export const buildJobChatAnswerPrompt = ({ message, jobs }: { message: string; jobs: RetrievedChatJob[] }) => `
@@ -57,7 +57,7 @@ ${baseInstruction}
 Hãy trả về JSON hợp lệ theo schema.
 - answer: câu trả lời tiếng Việt hiển thị cho user.
 - selected_job_ids: danh sách job_id của đúng các job được nhắc/gợi ý trong answer.
-- Nếu answer nói 2 job thì selected_job_ids phải có đúng 2 id.
+- Neu user yeu cau N job va Jobs context co du N job, answer nen nhac toi da N job phu hop; selected_job_ids phai khop dung cac job duoc nhac trong answer.
 - Nếu một job không được nhắc trong answer thì tuyệt đối không đưa vào selected_job_ids.
 - selected_job_ids chỉ được dùng job_id có trong Jobs context.
 

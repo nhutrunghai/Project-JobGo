@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import AdminLayout from '../../components/AdminLayout.jsx'
 import Toast from '../../components/Toast.jsx'
+import { compactId, formatDateVi as formatDate } from '../../utils/formatters.js'
+import { toSafeImageUrl } from '../../utils/safeUrl.js'
 import {
   getAdminCompanies,
   getAdminCompanyApplications,
@@ -30,18 +32,6 @@ const applicationStatusLabelMap = {
   rejected: 'Từ chối',
   hired: 'Đã nhận',
   withdrawn: 'Đã rút',
-}
-
-function formatDate(value) {
-  if (!value) return 'Chưa có'
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return 'Chưa có'
-  return new Intl.DateTimeFormat('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' }).format(date)
-}
-
-function compactId(value) {
-  if (!value) return 'Chưa có'
-  return `${String(value).slice(0, 7)}...${String(value).slice(-5)}`
 }
 
 function getInitial(company) {
@@ -217,7 +207,7 @@ export default function AdminCompanies() {
               <article key={company._id} className={`border-t border-slate-100 px-4 py-3 text-[12px] transition ${isSelected ? 'bg-emerald-50/60' : 'hover:bg-slate-50'} lg:grid lg:grid-cols-[minmax(0,1.2fr)_180px_120px_110px_92px] lg:items-center lg:gap-3`}>
                 <div className="flex min-w-0 items-center gap-3">
                   <div className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-md bg-slate-100 text-[13px] font-extrabold text-slate-700 ring-1 ring-slate-200">
-                    {company.logo ? <img src={company.logo} alt="" className="h-full w-full object-cover" /> : getInitial(company)}
+                    {toSafeImageUrl(company.logo) ? <img src={toSafeImageUrl(company.logo)} alt="" className="h-full w-full object-cover" /> : getInitial(company)}
                   </div>
                   <div className="min-w-0">
                     <p className="truncate font-extrabold text-slate-950">{company.company_name || 'Doanh nghiệp chưa đặt tên'}</p>
@@ -280,7 +270,7 @@ export default function AdminCompanies() {
             <div className="p-4">
               <div className="flex items-start gap-3">
                 <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-slate-100 text-base font-extrabold text-slate-700 ring-1 ring-slate-200">
-                  {selectedCompany.logo ? <img src={selectedCompany.logo} alt="" className="h-full w-full object-cover" /> : getInitial(selectedCompany)}
+                  {toSafeImageUrl(selectedCompany.logo) ? <img src={toSafeImageUrl(selectedCompany.logo)} alt="" className="h-full w-full object-cover" /> : getInitial(selectedCompany)}
                 </div>
                 <div className="min-w-0">
                   <h3 className="truncate text-lg font-extrabold text-slate-950">{selectedCompany.company_name || 'Doanh nghiệp chưa đặt tên'}</h3>
@@ -296,7 +286,7 @@ export default function AdminCompanies() {
               </div>
 
               <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
-                <Field label="Mã doanh nghiệp" value={compactId(selectedCompany._id)} />
+                <Field label="Mã doanh nghiệp" value={compactId(selectedCompany._id, { prefix: 7, suffix: 5 })} />
                 <Field label="Ngày tạo" value={formatDate(selectedCompany.created_at)} />
                 <Field label="Địa chỉ" value={selectedCompany.address} />
                 <Field label="Cập nhật" value={formatDate(selectedCompany.updated_at)} />

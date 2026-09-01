@@ -42,13 +42,22 @@ class AuthService {
   async signOtpCode(payload: OtpCode) {
     await databaseService.otpCodes.insertOne(new OtpCode(payload))
   }
-  private async signAccessAndRefresh(userInfo: object, device_info: string, option?: { expiresAt: Date }) {
+  private async signAccessAndRefresh(
+    userInfo: object,
+    device_info: string,
+    option?: { expiresAt?: Date; remember?: boolean }
+  ) {
     const jtiAccessToken = uuidv4()
     const jtiRefreshToken = uuidv4()
     const userInfoAccessToken = { ...userInfo, jti: jtiAccessToken, typeJwt: 'ACCESS_TOKEN' } as userInfo
-    const userInfoRefreshToken = { ...userInfo, jti: jtiRefreshToken, typeJwt: 'REFRESH_TOKEN' } as userInfo
+    const userInfoRefreshToken = {
+      ...userInfo,
+      jti: jtiRefreshToken,
+      typeJwt: 'REFRESH_TOKEN',
+      remember: option?.remember ?? true
+    } as userInfo
     let expiresAt
-    if (!option) {
+    if (!option?.expiresAt) {
       expiresAt = new Date()
       expiresAt.setDate(expiresAt.getDate() + parseInt(env.ExpiresIn_REFRESH_TOKEN?.split(' ')[0]))
     } else {
@@ -63,7 +72,7 @@ class AuthService {
         expires_at: expiresAt
       })
     )
-    const refreshTokenOption = option
+    const refreshTokenOption = option?.expiresAt
       ? ({ expiresIn: Math.max(1, Math.floor((expiresAt.getTime() - Date.now()) / 1000)) } as SignOptions)
       : undefined
     const refreshTokenPromise = refreshTokenOption
@@ -71,19 +80,19 @@ class AuthService {
       : this.signRefreshToken({ userInfoRefreshToken })
     return Promise.all([this.signAccessToken({ userInfoAccessToken }), refreshTokenPromise])
   }
-  async register(payload: User, device_info: string) {
+  async register(payload: User, device_info: string, remember = true) {
     if (!payload.is_verified) {
       payload.password = await hashPassword(payload.password)
     }
     const result = await databaseService.users.insertOne(new User(payload))
     const user_id = result.insertedId
     const userInfo = { userId: user_id, role: payload.role, vfd: payload.is_verified || false }
-    const [AccessToken, RefreshToken] = await this.signAccessAndRefresh(userInfo, device_info)
+    const [AccessToken, RefreshToken] = await this.signAccessAndRefresh(userInfo, device_info, { remember })
     return { id: user_id, AccessToken, RefreshToken }
   }
-  async login(user: User, device_info: string) {
+  async login(user: User, device_info: string, remember = true) {
     const userInfo = { userId: user._id, role: user.role as UserRole, vfd: user.is_verified }
-    const [AccessToken, RefreshToken] = await this.signAccessAndRefresh(userInfo, device_info)
+    const [AccessToken, RefreshToken] = await this.signAccessAndRefresh(userInfo, device_info, { remember })
     return { id: user._id, AccessToken, RefreshToken }
   }
   private async getOauthGoogleToken(code: string) {
@@ -128,13 +137,16 @@ class AuthService {
         is_verified: true,
         role: UserRole.CANDIDATE
       }
-      return this.register(payload, device_info)
+      return this.register(payload, device_info, true)
     }
   }
   async refreshToken(payload: userInfo, device_info: string) {
     const userInfo = { userId: payload.userId, role: payload.role, vfd: payload.vfd }
     const expiresAt = new Date((payload.exp as number) * 1000)
-    const [AccessToken, RefreshToken] = await this.signAccessAndRefresh(userInfo, device_info, { expiresAt })
+    const [AccessToken, RefreshToken] = await this.signAccessAndRefresh(userInfo, device_info, {
+      expiresAt,
+      remember: payload.remember !== false
+    })
     return { id: payload.userId, AccessToken, RefreshToken }
   }
   async verifyEmail(payload: OtpCode, device_info: string) {
