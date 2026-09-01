@@ -11,4 +11,14 @@ export const queryKeys = {
     details: ['wallet', 'details'],
     transactions: ({ page, limit }) => ['wallet', 'transactions', { page, limit }],
   },
+  dashboard: {
+    candidate: ['dashboard', 'candidate'],
+    admin: {
+      summary: ['dashboard', 'admin', 'summary'],
+      users: ['dashboard', 'admin', 'users'],
+      companies: ['dashboard', 'admin', 'companies'],
+      jobs: ['dashboard', 'admin', 'jobs'],
+      blockedJobs: ['dashboard', 'admin', 'blocked-jobs'],
+    },
+  },
 }

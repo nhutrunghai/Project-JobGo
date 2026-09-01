@@ -1,10 +1,11 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import DashboardSidebar from '../components/DashboardSidebar.jsx'
 import Toast from '../components/Toast.jsx'
 import { getWallet } from '../api/walletService.js'
 import { loadCandidateDashboardSnapshot } from '../data/apiClient.js'
-import { loadPortalMock } from '../data/mockClient.js'
+import { queryKeys } from '../lib/queryKeys.js'
 
 const overviewShells = [
   'from-blue-500 to-indigo-600',
@@ -84,45 +85,30 @@ function formatWalletBalance(balance) {
 export default function Dashboard() {
   const navigate = useNavigate()
   const location = useLocation()
-  const [overviewCards, setOverviewCards] = useState([])
-  const [quickActions, setQuickActions] = useState([])
-  const [activities, setActivities] = useState([])
   const [toast, setToast] = useState(location.state?.toast ?? null)
-
-  useEffect(() => {
-    const loadData = async () => {
-      const mock = await loadPortalMock().catch(() => ({ dashboard: fallbackDashboard }))
-      const dashboard = mock?.dashboard || fallbackDashboard
-      const cards = dashboard.overviewCards?.length ? dashboard.overviewCards : fallbackDashboard.overviewCards
-      const fallbackSnapshot = {
-        summary: {
-          totalApplied: cards.find((card) => card.key === 'active')?.value || 0,
-          hired: cards.find((card) => card.key === 'done')?.value || 0,
-        },
-        recentActivities: dashboard.activities?.length ? dashboard.activities : fallbackDashboard.activities,
-      }
-      const [candidateSnapshot, walletData] = await Promise.all([
-        loadCandidateDashboardSnapshot().catch(() => fallbackSnapshot),
-        getWallet().catch(() => null),
-      ])
-
-      setOverviewCards(cards.map((card) => {
-        if (card.key === 'active') {
-          return { ...card, value: String(candidateSnapshot.summary.totalApplied) }
-        }
-        if (card.key === 'done') {
-          return { ...card, value: String(candidateSnapshot.summary.hired) }
-        }
-        if (card.key === 'wallet') {
-          return { ...card, value: formatWalletBalance(walletData?.balance) }
-        }
-        return card
-      }))
-      setQuickActions(dashboard.quickActions?.length ? dashboard.quickActions : fallbackDashboard.quickActions)
-      setActivities(candidateSnapshot.recentActivities?.length ? candidateSnapshot.recentActivities : fallbackSnapshot.recentActivities)
+  const candidateDashboardQuery = useQuery({
+    queryKey: queryKeys.dashboard.candidate,
+    queryFn: loadCandidateDashboardSnapshot,
+  })
+  const walletQuery = useQuery({
+    queryKey: queryKeys.wallet.details,
+    queryFn: getWallet,
+  })
+  const overviewCards = useMemo(() => fallbackDashboard.overviewCards.map((card) => {
+    if (card.key === 'active') {
+      return { ...card, value: String(candidateDashboardQuery.data?.summary?.totalApplied || 0) }
     }
-    loadData()
-  }, [])
+    if (card.key === 'done') {
+      return { ...card, value: String(candidateDashboardQuery.data?.summary?.hired || 0) }
+    }
+    if (card.key === 'wallet') {
+      return { ...card, value: formatWalletBalance(walletQuery.data?.balance) }
+    }
+    return card
+  }), [candidateDashboardQuery.data, walletQuery.data])
+  const quickActions = fallbackDashboard.quickActions
+  const activities = candidateDashboardQuery.data?.recentActivities || fallbackDashboard.activities
+  const dashboardError = candidateDashboardQuery.error || walletQuery.error
 
   useEffect(() => {
     if (!location.state?.toast) return
@@ -145,6 +131,11 @@ export default function Dashboard() {
           </Link>
           <h1 className="text-[26px] font-semibold text-slate-900 sm:text-[31px]">Trang chủ</h1>
         </header>
+        {dashboardError ? (
+          <div className="mb-4 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700">
+            {dashboardError.message || 'Không thể tải toàn bộ dữ liệu tổng quan.'}
+          </div>
+        ) : null}
 
         <section className="mb-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
           <h2 className="mb-4 text-[18px] font-semibold text-slate-900">Tổng quan hoạt động</h2>

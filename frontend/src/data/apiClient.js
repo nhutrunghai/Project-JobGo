@@ -2,6 +2,7 @@ import { refreshAccessToken } from '../api/tokenRefresh.js'
 import { genUploader } from 'uploadthing/client'
 import { repairText } from '../utils/textRepair.js'
 import { buildApiUrl, clearClientAuthSession, createJsonHeaders, getAccessToken, getApiOrigin } from '../config/api'
+import { isMockDataEnabled } from '../config/featureFlags.js'
 
 const FAVORITE_STORAGE_KEY = 'favorite_job_ids'
 const FAVORITE_CACHE_TTL = 30000
@@ -903,8 +904,9 @@ export async function loadCandidateApplicationSummary() {
       totalApplied: Number(allPayload?.data?.pagination?.total || 0),
       hired: Number(hiredPayload?.data?.pagination?.total || 0),
     }
-  } catch {
-    return fallback()
+  } catch (error) {
+    if (isMockDataEnabled()) return fallback()
+    throw error
   }
 }
 
@@ -959,8 +961,9 @@ export async function loadCandidateDashboardSnapshot() {
       },
       recentActivities: sortedItems.slice(0, 5).map((item) => mapApplicationActivity(item)),
     }
-  } catch {
-    return fallback()
+  } catch (error) {
+    if (isMockDataEnabled()) return fallback()
+    throw error
   }
 }
 

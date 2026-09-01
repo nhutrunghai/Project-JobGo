@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import AdminLayout from '../../components/AdminLayout.jsx'
 import {
   getAdminCompanies,
@@ -6,7 +7,7 @@ import {
   getAdminJobs,
   getAdminUsers,
 } from '../../api/adminService.js'
-import Toast from '../../components/Toast.jsx'
+import { queryKeys } from '../../lib/queryKeys.js'
 
 const metricToneMap = {
   slate: 'border-slate-200 bg-white text-slate-900',
@@ -90,40 +91,38 @@ function Panel({ title, action, children, className = '' }) {
 }
 
 export default function AdminDashboard() {
-  const [summary, setSummary] = useState(null)
-  const [users, setUsers] = useState([])
-  const [companies, setCompanies] = useState([])
-  const [jobs, setJobs] = useState([])
-  const [blockedJobs, setBlockedJobs] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [toast, setToast] = useState(null)
-
-  useEffect(() => {
-    let active = true
-
-    Promise.all([
-      getAdminDashboardSummary().catch(() => null),
-      getAdminUsers({ page: 1, limit: 5 }).catch(() => ({ users: [] })),
-      getAdminCompanies({ page: 1, limit: 5 }).catch(() => ({ companies: [] })),
-      getAdminJobs({ page: 1, limit: 6 }).catch(() => ({ jobs: [] })),
-      getAdminJobs({ page: 1, limit: 4, moderation_status: 'blocked' }).catch(() => ({ jobs: [] })),
-    ])
-      .then(([summaryData, usersData, companiesData, jobsData, blockedJobsData]) => {
-        if (!active) return
-        setSummary(summaryData)
-        setUsers(usersData?.users ?? [])
-        setCompanies(companiesData?.companies ?? [])
-        setJobs(jobsData?.jobs ?? [])
-        setBlockedJobs(blockedJobsData?.jobs ?? [])
-      })
-      .finally(() => {
-        if (active) setLoading(false)
-      })
-
-    return () => {
-      active = false
-    }
-  }, [])
+  const summaryQuery = useQuery({
+    queryKey: queryKeys.dashboard.admin.summary,
+    queryFn: getAdminDashboardSummary,
+  })
+  const usersQuery = useQuery({
+    queryKey: queryKeys.dashboard.admin.users,
+    queryFn: () => getAdminUsers({ page: 1, limit: 5 }),
+  })
+  const companiesQuery = useQuery({
+    queryKey: queryKeys.dashboard.admin.companies,
+    queryFn: () => getAdminCompanies({ page: 1, limit: 5 }),
+  })
+  const jobsQuery = useQuery({
+    queryKey: queryKeys.dashboard.admin.jobs,
+    queryFn: () => getAdminJobs({ page: 1, limit: 6 }),
+  })
+  const blockedJobsQuery = useQuery({
+    queryKey: queryKeys.dashboard.admin.blockedJobs,
+    queryFn: () => getAdminJobs({ page: 1, limit: 4, moderation_status: 'blocked' }),
+  })
+  const summary = summaryQuery.data || null
+  const users = usersQuery.data?.users ?? []
+  const companies = companiesQuery.data?.companies ?? []
+  const jobs = jobsQuery.data?.jobs ?? []
+  const blockedJobs = blockedJobsQuery.data?.jobs ?? []
+  const loading = [
+    summaryQuery,
+    usersQuery,
+    companiesQuery,
+    jobsQuery,
+    blockedJobsQuery,
+  ].some((query) => query.isPending || query.isFetching)
 
   const derived = useMemo(() => {
     const totalUsers = summary?.total_users || 0
@@ -155,8 +154,6 @@ export default function AdminDashboard() {
       title={'T\u1ed5ng quan'}
       subtitle={'T\u1ed5ng quan v\u1eadn h\u00e0nh h\u1ec7 th\u1ed1ng t\u1eeb d\u1eef li\u1ec7u ng\u01b0\u1eddi d\u00f9ng, doanh nghi\u1ec7p, tin tuy\u1ec3n d\u1ee5ng v\u00e0 h\u1ed3 s\u01a1 \u1ee9ng tuy\u1ec3n.'}
     >
-      <Toast toast={toast} onClose={() => setToast(null)} />
-
       <section className="mb-4 grid grid-cols-1 gap-3 xl:grid-cols-[minmax(0,1.35fr)_360px]">
         <div className="rounded-lg border border-slate-200 bg-slate-950 p-4 text-white shadow-sm">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
