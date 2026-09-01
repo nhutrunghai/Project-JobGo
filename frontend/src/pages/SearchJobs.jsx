@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import PublicHeader from '../components/layout/PublicHeader.jsx'
 import UserAvatar from '../components/UserAvatar.jsx'
 import useCurrentUser from '../hooks/useCurrentUser.js'
 import { useFavoriteStore } from '../stores/useFavoriteStore.js'
-import { loadJobsForHome, searchPublicJobs } from '../data/apiClient.js'
+import { searchPublicJobs } from '../data/apiClient.js'
+import { queryKeys } from '../lib/queryKeys.js'
 const locationOptions = [
   { label: 'Tất cả địa điểm', value: '' },
   { label: 'Hồ Chí Minh', value: 'Ho Chi Minh' },
@@ -38,72 +40,39 @@ export default function SearchJobs() {
   const favoriteIds = useFavoriteStore((state) => state.favoriteIds)
   const toggleFavoriteInStore = useFavoriteStore((state) => state.toggle)
   const [searchParams, setSearchParams] = useSearchParams()
-  const [jobs, setJobs] = useState([])
   const [keyword, setKeyword] = useState(searchParams.get('q') || '')
   const [location, setLocation] = useState(searchParams.get('location') || '')
   const [jobType, setJobType] = useState(searchParams.get('job_type') || '')
   const [level, setLevel] = useState(searchParams.get('level') || '')
-  const [isSearching, setIsSearching] = useState(false)
-  const [searchError, setSearchError] = useState('')
-  const [pagination, setPagination] = useState(null)
+  const searchFilters = useMemo(() => ({
+    q: String(searchParams.get('q') || '').trim(),
+    location: String(searchParams.get('location') || '').trim(),
+    job_type: String(searchParams.get('job_type') || '').trim(),
+    level: String(searchParams.get('level') || '').trim(),
+    category_id: String(searchParams.get('category_id') || '').trim(),
+    page: Number(searchParams.get('page') || 1),
+    limit: 10,
+  }), [searchParams])
+  const {
+    data: searchResult,
+    isPending,
+    isFetching,
+    error: searchQueryError,
+  } = useQuery({
+    queryKey: queryKeys.jobs.search(searchFilters),
+    queryFn: () => searchPublicJobs(searchFilters),
+  })
+  const filteredJobs = searchResult?.jobs || []
+  const pagination = searchResult?.pagination || null
+  const isSearching = isPending || isFetching
+  const searchError = searchQueryError?.message || ''
+
   useEffect(() => {
-    let active = true
-    const submittedKeyword = String(searchParams.get('q') || '').trim()
-    const submittedLocation = String(searchParams.get('location') || '').trim()
-    const submittedJobType = String(searchParams.get('job_type') || '').trim()
-    const submittedLevel = String(searchParams.get('level') || '').trim()
-    const submittedCategoryId = String(searchParams.get('category_id') || '').trim()
-
-    setKeyword(submittedKeyword)
-    setLocation(submittedLocation)
-    setJobType(submittedJobType)
-    setLevel(submittedLevel)
-
-    async function loadSearchResults() {
-      setSearchError('')
-
-      const hasSubmittedFilters = Boolean(submittedLocation || submittedJobType || submittedLevel || submittedCategoryId)
-
-      if (submittedKeyword.length < 2 && !hasSubmittedFilters) {
-        setIsSearching(false)
-        setPagination(null)
-        const fallbackJobs = await loadJobsForHome()
-        if (active) setJobs(fallbackJobs || [])
-        return
-      }
-
-      setIsSearching(true)
-      try {
-        const result = await searchPublicJobs({
-          q: submittedKeyword,
-          location: submittedLocation || undefined,
-          job_type: submittedJobType || undefined,
-          level: submittedLevel || undefined,
-          category_id: submittedCategoryId || undefined,
-          page: Number(searchParams.get('page') || 1),
-          limit: 10,
-        })
-        if (!active) return
-        setJobs(result.jobs || [])
-        setPagination(result.pagination || null)
-      } catch (error) {
-        if (!active) return
-        setJobs([])
-        setPagination(null)
-        setSearchError(error.message || 'Không thể tìm kiếm công việc từ backend.')
-      } finally {
-        if (active) setIsSearching(false)
-      }
-    }
-
-    loadSearchResults()
-
-    return () => {
-      active = false
-    }
-  }, [searchParams])
-
-  const filteredJobs = useMemo(() => jobs, [jobs])
+    setKeyword(searchFilters.q)
+    setLocation(searchFilters.location)
+    setJobType(searchFilters.job_type)
+    setLevel(searchFilters.level)
+  }, [searchFilters])
   const page = Number(pagination?.page || searchParams.get('page') || 1)
   const limit = Number(pagination?.limit || 10)
   const totalResults = Number(pagination?.total ?? filteredJobs.length)

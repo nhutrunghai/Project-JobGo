@@ -1,14 +1,17 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useQueryClient } from '@tanstack/react-query'
 import { logout as logoutRequest } from '../../api/authService.js'
 import { refreshAccessToken } from '../../api/tokenRefresh.js'
 import { getMyProfile } from '../../api/userService.js'
 import { clearClientAuthSession, hasAccessToken } from '../../config/api.js'
 import { useFavoriteStore } from '../../stores/useFavoriteStore.js'
 import { AuthContext } from './AuthContext.js'
+import { queryKeys } from '../../lib/queryKeys.js'
 
 export function AuthProvider({ children }) {
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
   const [isAuthenticated, setIsAuthenticated] = useState(hasAccessToken)
   const [profile, setProfile] = useState(null)
   const [isLoading, setIsLoading] = useState(true)
@@ -17,15 +20,21 @@ export function AuthProvider({ children }) {
     clearClientAuthSession()
     setProfile(null)
     setIsAuthenticated(false)
+    queryClient.removeQueries({ queryKey: queryKeys.profile.me })
+    queryClient.removeQueries({ queryKey: queryKeys.profile.detail })
     useFavoriteStore.getState().clear()
-  }, [])
+  }, [queryClient])
 
   const refreshSession = useCallback(async ({ force = true } = {}) => {
     setIsLoading(true)
 
     try {
       if (!hasAccessToken()) await refreshAccessToken()
-      const nextProfile = await getMyProfile({ force, redirectOnUnauthorized: false })
+      const nextProfile = await queryClient.fetchQuery({
+        queryKey: queryKeys.profile.me,
+        queryFn: () => getMyProfile({ force: true, redirectOnUnauthorized: false }),
+        staleTime: force ? 0 : 30000,
+      })
       setProfile(nextProfile)
       setIsAuthenticated(true)
       return nextProfile
@@ -35,7 +44,7 @@ export function AuthProvider({ children }) {
     } finally {
       setIsLoading(false)
     }
-  }, [clearSession])
+  }, [clearSession, queryClient])
 
   useEffect(() => {
     void refreshSession({ force: false })

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import DashboardSidebar from '../components/DashboardSidebar.jsx'
 import Toast from '../components/Toast.jsx'
@@ -11,6 +12,7 @@ import {
   storeTopUpSession,
   validateTopUpAmount,
 } from '../api/walletService.js'
+import { queryKeys } from '../lib/queryKeys.js'
 
 const POLL_INTERVAL_MS = 7000
 const BANK_CODE_FALLBACK = 'BIDV'
@@ -106,14 +108,11 @@ function normalizeSession(data) {
 }
 
 export default function WalletTopUp() {
+  const queryClient = useQueryClient()
   const [amount, setAmount] = useState('')
   const [amountError, setAmountError] = useState('')
-  const [wallet, setWallet] = useState(null)
-  const [transactions, setTransactions] = useState([])
-  const [pagination, setPagination] = useState({ page: 1, limit: 8, total: 0, total_pages: 1 })
+  const [transactionPage, setTransactionPage] = useState(1)
   const [session, setSession] = useState(() => normalizeSession(readStoredTopUpSession()))
-  const [loading, setLoading] = useState(true)
-  const [creating, setCreating] = useState(false)
   const [checking, setChecking] = useState(false)
   const [toast, setToast] = useState(null)
   const activeOrderCodeRef = useRef(getOrderCode(session?.order, session?.payment))
@@ -125,23 +124,46 @@ export default function WalletTopUp() {
   const transferContent = getTransferContent(order, payment)
   const status = mapTopUpStatus(order?.status)
   const qrSrc = useMemo(() => buildQrSrc(order, payment), [order, payment])
+  const walletQuery = useQuery({
+    queryKey: queryKeys.wallet.details,
+    queryFn: getWallet,
+  })
+  const transactionsQuery = useQuery({
+    queryKey: queryKeys.wallet.transactions({ page: transactionPage, limit: 8 }),
+    queryFn: () => getWalletTransactions({ page: transactionPage, limit: 8 }),
+  })
+  const createOrderMutation = useMutation({
+    mutationFn: createTopUpOrder,
+  })
+  const wallet = walletQuery.data || null
+  const transactions = transactionsQuery.data?.transactions || []
+  const pagination = transactionsQuery.data?.pagination || {
+    page: transactionPage,
+    limit: 8,
+    total: 0,
+    total_pages: 1,
+  }
+  const loading = walletQuery.isPending || transactionsQuery.isPending || transactionsQuery.isFetching
+  const creating = createOrderMutation.isPending
 
   useEffect(() => {
     activeOrderCodeRef.current = orderCode
   }, [orderCode])
 
-  const refreshWalletAndHistory = useCallback(async (page = pagination.page) => {
-    const [walletData, historyData] = await Promise.all([
-      getWallet().catch(() => wallet),
-      getWalletTransactions({ page, limit: pagination.limit }).catch(() => ({
-        transactions,
-        pagination,
-      })),
+  useEffect(() => {
+    const error = walletQuery.error || transactionsQuery.error
+    if (error) {
+      setToast({ type: 'error', message: error.message || 'Kh\u00f4ng th\u1ec3 t\u1ea3i d\u1eef li\u1ec7u v\u00ed.' })
+    }
+  }, [transactionsQuery.error, walletQuery.error])
+
+  const refreshWalletAndHistory = useCallback(async (page = transactionPage) => {
+    if (page !== transactionPage) setTransactionPage(page)
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: queryKeys.wallet.details }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.wallet.transactions({ page, limit: 8 }) }),
     ])
-    setWallet(walletData || null)
-    setTransactions(historyData?.transactions || [])
-    setPagination(historyData?.pagination || pagination)
-  }, [pagination, transactions, wallet])
+  }, [queryClient, transactionPage])
 
   const checkOrderStatus = useCallback(async ({ silent = false } = {}) => {
     if (!orderCode) return null
@@ -185,39 +207,6 @@ export default function WalletTopUp() {
   }, [order, orderCode, payment, refreshWalletAndHistory, session])
 
   useEffect(() => {
-    let mounted = true
-
-    const loadInitialData = async () => {
-      try {
-        const [walletData, historyData] = await Promise.all([
-          getWallet().catch(() => null),
-          getWalletTransactions({ page: 1, limit: pagination.limit }).catch(() => ({
-            transactions: [],
-            pagination: { page: 1, limit: pagination.limit, total: 0, total_pages: 1 },
-          })),
-        ])
-
-        if (!mounted) return
-        setWallet(walletData)
-        setTransactions(historyData?.transactions || [])
-        setPagination(historyData?.pagination || { page: 1, limit: pagination.limit, total: 0, total_pages: 1 })
-      } catch (error) {
-        if (mounted) {
-          setToast({ type: 'error', message: error.message || 'Kh\u00f4ng th\u1ec3 t\u1ea3i d\u1eef li\u1ec7u v\u00ed.' })
-        }
-      } finally {
-        if (mounted) setLoading(false)
-      }
-    }
-
-    loadInitialData()
-
-    return () => {
-      mounted = false
-    }
-  }, [pagination.limit])
-
-  useEffect(() => {
     if (!orderCode || order?.status === 'paid') return undefined
 
     checkOrderStatus({ silent: true })
@@ -258,9 +247,8 @@ export default function WalletTopUp() {
       return
     }
 
-    setCreating(true)
     try {
-      const data = await createTopUpOrder(Number(amount))
+      const data = await createOrderMutation.mutateAsync(Number(amount))
       const nextSession = normalizeSession({
         ...data,
         createdAt: new Date().toISOString(),
@@ -272,8 +260,6 @@ export default function WalletTopUp() {
       setToast({ type: 'success', message: '\u0110\u00e3 t\u1ea1o l\u1ec7nh n\u1ea1p. Vui l\u00f2ng chuy\u1ec3n kho\u1ea3n \u0111\u00fang th\u00f4ng tin hi\u1ec3n th\u1ecb.' })
     } catch (error) {
       setToast({ type: 'error', message: error.message || 'Kh\u00f4ng th\u1ec3 t\u1ea1o l\u1ec7nh n\u1ea1p ti\u1ec1n.' })
-    } finally {
-      setCreating(false)
     }
   }
 
@@ -297,16 +283,13 @@ export default function WalletTopUp() {
     setAmountError('')
   }
 
-  const handleChangePage = async (nextPage) => {
+  const handleChangePage = (nextPage) => {
     if (nextPage < 1 || nextPage > pagination.total_pages) return
-    setLoading(true)
-    try {
-      await refreshWalletAndHistory(nextPage)
-    } catch (error) {
-      setToast({ type: 'error', message: error.message || 'Kh\u00f4ng th\u1ec3 t\u1ea3i l\u1ecbch s\u1eed giao d\u1ecbch.' })
-    } finally {
-      setLoading(false)
+    if (nextPage === transactionPage) {
+      void refreshWalletAndHistory(nextPage)
+      return
     }
+    setTransactionPage(nextPage)
   }
 
   return (
