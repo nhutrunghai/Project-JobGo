@@ -1,31 +1,5 @@
 import apiClient from './axiosClient.js'
 
-const COMPANY_MOCK_URL = '/api/company.json'
-const COMPANY_APPS_STORAGE_KEY = 'company_application_status_mock'
-
-async function loadCompanyMock() {
-  const response = await fetch(COMPANY_MOCK_URL)
-  if (!response.ok) {
-    throw new Error('Không thể tải dữ liệu mock company.')
-  }
-  return response.json()
-}
-
-function readStorageJson(key, fallback) {
-  try {
-    const raw = window.localStorage.getItem(key)
-    if (!raw) return fallback
-    const parsed = JSON.parse(raw)
-    return parsed ?? fallback
-  } catch {
-    return fallback
-  }
-}
-
-function writeStorageJson(key, value) {
-  window.localStorage.setItem(key, JSON.stringify(value))
-}
-
 
 export async function getJobCategories() {
   const response = await apiClient.get('/job-categories', { auth: false })
@@ -104,32 +78,4 @@ export async function getCompanyJobApplications(jobId, status, page = 1, limit =
     items: data.applications || [],
     pagination: data.pagination || { page, limit, total: 0 },
   }
-}
-
-export async function getCompanyApplicationDetail(applicationId) {
-  const mock = await loadCompanyMock()
-  const details = Array.isArray(mock.applicationDetails) ? mock.applicationDetails : []
-  const statusMap = readStorageJson(COMPANY_APPS_STORAGE_KEY, {})
-  const detail = details.find((item) => String(item._id) === String(applicationId))
-
-  if (!detail) throw new Error('Không tìm thấy hồ sơ ứng viên.')
-  return {
-    ...detail,
-    status: statusMap[String(applicationId)] || detail.status,
-  }
-}
-
-export async function updateCompanyApplicationStatus(applicationId, status) {
-  const statusMap = readStorageJson(COMPANY_APPS_STORAGE_KEY, {})
-  statusMap[String(applicationId)] = status
-  writeStorageJson(COMPANY_APPS_STORAGE_KEY, statusMap)
-  return { status: 'success', message: 'Cập nhật trạng thái thành công.' }
-}
-
-export async function getUserProfile(userName) {
-  const mock = await loadCompanyMock()
-  const profiles = Array.isArray(mock.userProfiles) ? mock.userProfiles : []
-  const item = profiles.find((profile) => String(profile.user_name).toLowerCase() === String(userName).toLowerCase())
-  if (!item) throw new Error('Không tìm thấy thông tin user.')
-  return item
 }

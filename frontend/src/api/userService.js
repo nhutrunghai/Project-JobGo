@@ -2,46 +2,6 @@ import apiClient from './axiosClient.js'
 import { genUploader } from 'uploadthing/client'
 import { getAccessToken, getApiOrigin } from '../config/api.js'
 
-const MOCK_PROFILE = {
-  username: 'nguyenvana',
-  email: 'nguyenvana@example.com',
-  fullName: 'Nguyễn Văn A',
-  bio: 'Backend developer with product mindset and interest in scalable systems.',
-  address: 'TP.HCM',
-  phone: '0901234567',
-  birthDate: '12/09/1998',
-  email_verified: true,
-  headline: 'Backend Developer / Node.js',
-  goals: 'Xây dựng sản phẩm công nghệ có khả năng mở rộng và mang lại giá trị thật cho người dùng.',
-  skills: ['Node.js', 'React', 'MongoDB', 'PostgreSQL', 'Docker'],
-  hobbies: ['Doc sach cong nghe', 'Chay bo', 'Nghe podcast'],
-  experience: [
-    {
-      role: 'Backend Developer',
-      company: 'Sky Tech Solutions',
-      startYear: '2023',
-      endYear: 'Now',
-      details: ['Xây dựng API cho hệ thống việc làm.', 'Tối ưu truy vấn và monitoring production.'],
-    },
-    {
-      role: 'Fullstack Developer',
-      company: 'Mekong Studio',
-      startYear: '2021',
-      endYear: '2023',
-      details: ['Phat trien dashboard noi bo.', 'Phoi hop giua frontend va backend cho san pham SME.'],
-    },
-  ],
-  education: [
-    {
-      school: 'Dai hoc Cong nghe',
-      degree: 'Kỹ sư Công nghệ thông tin',
-      startYear: '2017',
-      endYear: '2021',
-      details: ['Chuyen nganh Kỹ thuật phần mềm', 'Tham gia câu lạc bộ lập trình va các dự án nhóm'],
-    },
-  ],
-}
-
 const CACHE_TTL = 30000
 const cache = {
   profile: null,
@@ -81,11 +41,10 @@ function clearProfileCaches() {
 
 function normalizeMyProfile(profile = {}) {
   return {
-    ...MOCK_PROFILE,
     ...profile,
-    id: profile._id || profile.id || MOCK_PROFILE.id,
-    username: profile.username || MOCK_PROFILE.username,
-    fullName: profile.fullName || profile.username || MOCK_PROFILE.fullName,
+    id: profile._id || profile.id || '',
+    username: profile.username || '',
+    fullName: profile.fullName || profile.username || '',
     avatar: profile.avatar || '',
   }
 }

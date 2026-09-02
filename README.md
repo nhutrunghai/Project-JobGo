@@ -66,7 +66,7 @@ jobgo-fullstack/
 │   └── src/
 │       ├── pages/          # Trang candidate, employer, admin
 │       ├── components/     # Component giao diện
-│       ├── data/           # API client/mock data
+│       ├── data/           # API client
 │       └── routes/         # Điều hướng frontend
 ├── embedding-api/          # API embedding phục vụ semantic search/RAG
 ├── docs/                   # Tài liệu và Postman config

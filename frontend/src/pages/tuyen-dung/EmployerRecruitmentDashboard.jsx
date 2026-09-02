@@ -6,7 +6,6 @@ import EmployerTopBar from '../../components/EmployerTopBar.jsx'
 import RichTextContent from '../../components/RichTextContent.jsx'
 import RichTextEditor from '../../components/RichTextEditor.jsx'
 import { createCompanyJob, getCompanyJob, getJobCategories, updateCompanyJob } from '../../api/companyService.js'
-import { loadHardcodedMock } from '../../data/hardcodedClient.js'
 
 const jobTypeOptions = [
   { value: 'full-time', label: 'Toàn thời gian', icon: 'business_center', tone: 'bg-blue-50 text-blue-600' },
@@ -303,7 +302,6 @@ export default function EmployerRecruitmentDashboard() {
   const location = useLocation()
   const editJobId = location.state?.editJobId || ''
   const isEditing = Boolean(editJobId)
-  const [steps, setSteps] = useState(defaultSteps)
   const [categoryOptions, setCategoryOptions] = useState([])
   const [form, setForm] = useState(null)
   const [currentStep, setCurrentStep] = useState(1)
@@ -333,13 +331,9 @@ export default function EmployerRecruitmentDashboard() {
     let active = true
 
     const loadData = async () => {
-      const mock = await loadHardcodedMock().catch(() => null)
-      const recruitment = mock?.employerRecruitment || {}
       const categoriesResponse = await getJobCategories().catch(() => [])
-      const nextSteps = recruitment.steps?.length ? recruitment.steps : defaultSteps
 
       if (!active) return
-      setSteps(nextSteps)
       setCategoryOptions(Array.isArray(categoriesResponse) ? categoriesResponse : [])
 
       if (editJobId) {
@@ -349,7 +343,7 @@ export default function EmployerRecruitmentDashboard() {
         return
       }
 
-      setForm(mapInitialForm(recruitment.initialForm || {}))
+      setForm(mapInitialForm())
     }
 
     loadData().catch((error) => {
@@ -809,12 +803,12 @@ export default function EmployerRecruitmentDashboard() {
               {isEditing ? 'Chỉnh sửa tin tuyển dụng' : 'Đăng tin tuyển dụng'}
             </h1>
             <p className="mt-2 text-sm text-slate-500">
-              Bước {currentStep}/{steps.length || 1}: {steps.find((step) => step.id === currentStep)?.label || 'Thông tin chung'}
+              Bước {currentStep}/{defaultSteps.length}: {defaultSteps.find((step) => step.id === currentStep)?.label || 'Thông tin chung'}
             </p>
           </div>
 
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-3 lg:flex lg:flex-wrap">
-            {steps.map((step) => (
+            {defaultSteps.map((step) => (
               <button
                 key={step.id}
                 type="button"

@@ -59,13 +59,6 @@ const quickActions = [
     icon: 'description',
     className: 'bg-amber-500 hover:bg-amber-600',
   },
-  {
-    label: 'Lịch phỏng vấn',
-    description: 'Kiểm tra các buổi phỏng vấn đang theo dõi.',
-    to: '/employer-interviews',
-    icon: 'calendar_month',
-    className: 'bg-rose-500 hover:bg-rose-600',
-  },
 ]
 
 function getCompanyInitials(name) {

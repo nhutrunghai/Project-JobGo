@@ -2,9 +2,7 @@ import { refreshAccessToken } from '../api/tokenRefresh.js'
 import { genUploader } from 'uploadthing/client'
 import { repairText } from '../utils/textRepair.js'
 import { buildApiUrl, clearClientAuthSession, createJsonHeaders, getAccessToken, getApiOrigin } from '../config/api'
-import { isMockDataEnabled } from '../config/featureFlags.js'
 
-const FAVORITE_STORAGE_KEY = 'favorite_job_ids'
 const FAVORITE_CACHE_TTL = 30000
 const JSON_GET_CACHE_TTL = 10000
 const EMPLOYER_OVERVIEW_CACHE_TTL = 15000
@@ -12,8 +10,6 @@ const EMPLOYER_OVERVIEW_JOB_LIMIT = 24
 const EMPLOYER_RECENT_JOB_LIMIT = 8
 const EMPLOYER_RECENT_APPLICATION_LIMIT = 5
 let favoriteIdsCache = null
-let mockJobsPromise = null
-let mockProfileEditPromise = null
 let employerOverviewCache = null
 const jsonGetCache = new Map()
 const jsonGetInflight = new Map()
@@ -130,16 +126,6 @@ async function requestJson(path, options = {}) {
   return promise
 }
 
-async function loadMockJobs() {
-  mockJobsPromise ??= fetch('/api/jobs.json').then((res) => (res.ok ? res.json() : { jobDetails: [] })).catch(() => ({ jobDetails: [] }))
-  return mockJobsPromise
-}
-
-async function loadMockProfileEdit() {
-  mockProfileEditPromise ??= fetch('/api/profile-edit.json').then((res) => res.json())
-  return mockProfileEditPromise
-}
-
 function formatSalary(salary) {
   if (!salary || typeof salary !== 'object') return 'Th\u1ecfa thu\u1eadn'
   if (salary.is_negotiable && salary.min == null && salary.max == null) return 'Th\u1ecfa thu\u1eadn'
@@ -175,10 +161,6 @@ function normalizeObjectId(value) {
 
 function isMongoObjectId(value) {
   return /^[a-fA-F0-9]{24}$/.test(String(value || '').trim())
-}
-
-function getJobApplyId(job) {
-  return normalizeObjectId(job?.applyId || job?.backendId || job?._id || job?.id)
 }
 
 function formatDate(value) {
@@ -450,29 +432,6 @@ async function normalizeAppliedJobItemWithDetail(item) {
   }
 }
 
-async function loadAppliedJobsFallback() {
-  const mock = await loadMockJobs()
-  const fallbackItems = Array.isArray(mock?.appliedJobsResponse?.data?.jobs)
-    ? mock.appliedJobsResponse.data.jobs
-    : Array.isArray(mock?.appliedJobs)
-      ? mock.appliedJobs
-      : []
-
-  if (fallbackItems.length) {
-    return {
-      jobs: fallbackItems.map((item) => normalizeAppliedJobItem(item)),
-      pagination: {
-        page: 1,
-        limit: fallbackItems.length,
-        total: fallbackItems.length,
-        total_pages: 1,
-      },
-    }
-  }
-
-  return { jobs: [], pagination: { page: 1, limit: 10, total: 0, total_pages: 1 } }
-}
-
 export async function loadHomeMeta() {
   try {
     const payload = await requestJson('/job-categories')
@@ -516,9 +475,9 @@ export async function loadEmployerCompanyGate({ force = false } = {}) {
   }
 }
 
-export async function loadJobsForHome() {
-  const mock = await loadMockJobs()
-  return mock.jobs || []
+export async function loadJobsForHome({ page = 1, limit = 8 } = {}) {
+  const payload = await requestJson(`/jobs/latest?page=${page}&limit=${limit}`)
+  return getPublicJobsFromPayload(payload)
 }
 
 function getPublicJobsFromPayload(payload) {
@@ -534,40 +493,18 @@ function getPublicJobsFromPayload(payload) {
 }
 
 export async function loadFeaturedJobs({ page = 1, limit = 8 } = {}) {
-  try {
-    const payload = await requestJson(`/jobs/featured?page=${page}&limit=${limit}`)
-    return {
-      jobs: getPublicJobsFromPayload(payload),
-      pagination: payload?.data?.pagination || null,
-    }
-  } catch {
-    const jobs = await loadJobsForHome()
-    return {
-      jobs: jobs.slice(0, limit),
-      pagination: null,
-    }
+  const payload = await requestJson(`/jobs/featured?page=${page}&limit=${limit}`)
+  return {
+    jobs: getPublicJobsFromPayload(payload),
+    pagination: payload?.data?.pagination || null,
   }
 }
 
 export async function loadLatestJobs({ page = 1, limit = 8 } = {}) {
-  try {
-    const payload = await requestJson(`/jobs/latest?page=${page}&limit=${limit}`)
-    return {
-      jobs: getPublicJobsFromPayload(payload),
-      pagination: payload?.data?.pagination || null,
-    }
-  } catch {
-    const jobs = await loadJobsForHome()
-    return {
-      jobs: [...jobs]
-        .sort((a, b) => {
-          const aTime = a?.publishedAt ? new Date(a.publishedAt).getTime() : 0
-          const bTime = b?.publishedAt ? new Date(b.publishedAt).getTime() : 0
-          return bTime - aTime
-        })
-        .slice(0, limit),
-      pagination: null,
-    }
+  const payload = await requestJson(`/jobs/latest?page=${page}&limit=${limit}`)
+  return {
+    jobs: getPublicJobsFromPayload(payload),
+    pagination: payload?.data?.pagination || null,
   }
 }
 
@@ -582,7 +519,7 @@ export async function searchPublicJobs(queryOrParams) {
   const hasFilters = Boolean(params.location || params.job_type || params.level || params.category_id)
 
   if (query.length < 2 && !hasFilters) {
-    const jobs = await loadJobsForHome()
+    const jobs = await loadJobsForHome({ page: params.page || 1, limit: params.limit || 10 })
     return shouldReturnSearchResult ? { jobs, pagination: null } : jobs
   }
 
@@ -616,103 +553,37 @@ export async function searchPublicJobs(queryOrParams) {
 }
 
 export async function loadJobDetail(id) {
-  try {
-    const payload = await requestJson(`/jobs/${id}`, { auth: Boolean(getAccessToken()) })
-    const job = payload?.data?.job || payload?.data
-    const company = payload?.data?.company || job?.company
-    const myApplication = payload?.data?.my_application
-    if (job) {
-      return normalizeJobDetail(job, company, myApplication)
-    }
-  } catch {
-    // Fall back to local mock data when the backend is unavailable.
-  }
-
-  const mock = await loadMockJobs()
-  const details = mock.jobDetails || []
-  const localDetail = details.find((item) => item.id === id)
-
-  if (localDetail && !isMongoObjectId(id)) {
-    try {
-      const searchParams = new URLSearchParams({
-        q: localDetail.title,
-        page: '1',
-        limit: '5',
-      })
-      const payload = await requestJson(`/jobs/search?${searchParams.toString()}`)
-      const items = Array.isArray(payload?.data?.items)
-        ? payload.data.items
-        : Array.isArray(payload?.data?.jobs)
-          ? payload.data.jobs
-          : Array.isArray(payload?.data)
-            ? payload.data
-            : []
-      const match = items.find((item) => {
-        const sameTitle = String(item.title || '').trim().toLowerCase() === String(localDetail.title || '').trim().toLowerCase()
-        const sameCompany = String(item.company?.company_name || '').trim().toLowerCase() === String(localDetail.company || '').trim().toLowerCase()
-        return sameTitle && (!localDetail.company || sameCompany)
-      })
-      const backendId = getJobApplyId(match)
-
-      if (backendId) {
-        const detailPayload = await requestJson(`/jobs/${backendId}`, { auth: Boolean(getAccessToken()) })
-        const job = detailPayload?.data?.job || detailPayload?.data
-        const company = detailPayload?.data?.company || job?.company
-        const myApplication = detailPayload?.data?.my_application
-        if (job) {
-          return normalizeJobDetail(job, company, myApplication)
-        }
-      }
-    } catch {
-      // Keep local detail fallback if the mock slug cannot be resolved to a real backend job.
-    }
-  }
-
-  const appliedItems = Array.isArray(mock?.appliedJobsResponse?.data?.jobs) ? mock.appliedJobsResponse.data.jobs : []
-  const appliedMatch = appliedItems.find((item) => {
-    const jobId = item?.job?._id || item?.job?.id
-    return String(jobId) === String(id)
-  })
-
-  if (appliedMatch?.job) {
-    return normalizeJobDetail(appliedMatch.job, appliedMatch.job.company, appliedMatch.my_application || null)
-  }
-
-  return localDetail || details[0] || null
+  const payload = await requestJson(`/jobs/${encodeURIComponent(id)}`, { auth: Boolean(getAccessToken()) })
+  const job = payload?.data?.job || payload?.data
+  if (!job) throw new Error('Không tìm thấy công việc.')
+  return normalizeJobDetail(job, payload?.data?.company || job.company, payload?.data?.my_application)
 }
 
 export async function loadOtherJobDetails(currentId) {
-  const mock = await loadMockJobs()
-  return (mock.jobDetails || []).filter((item) => item.id !== currentId)
+  const payload = await requestJson('/jobs/latest?page=1&limit=5')
+  return getPublicJobsFromPayload(payload).filter((item) => String(item.id) !== String(currentId))
 }
 
 export async function loadAppliedJobs({ status, page = 1, limit = 100, withPagination = false } = {}) {
-  try {
-    const params = new URLSearchParams({
-      page: String(page),
-      limit: String(limit),
-    })
-    if (status) params.set('status', status)
+  const params = new URLSearchParams({
+    page: String(page),
+    limit: String(limit),
+  })
+  if (status) params.set('status', status)
 
-    const payload = await requestJson(`/jobs/me/applied?${params.toString()}`, { auth: true })
-    const items = getAppliedItems(payload?.data)
-    const result = {
-      jobs: await Promise.all(items.map((item) => normalizeAppliedJobItemWithDetail(item))),
-      pagination: payload?.data?.pagination || {
-        page,
-        limit,
-        total: items.length,
-        total_pages: 1,
-      },
-    }
-
-    return withPagination ? result : result.jobs
-  } catch {
-    // Fall back to local mock data when the backend is unavailable.
+  const payload = await requestJson(`/jobs/me/applied?${params.toString()}`, { auth: true })
+  const items = getAppliedItems(payload?.data)
+  const result = {
+    jobs: await Promise.all(items.map((item) => normalizeAppliedJobItemWithDetail(item))),
+    pagination: payload?.data?.pagination || {
+      page,
+      limit,
+      total: items.length,
+      total_pages: 1,
+    },
   }
 
-  const fallback = await loadAppliedJobsFallback()
-  return withPagination ? fallback : fallback.jobs
+  return withPagination ? result : result.jobs
 }
 
 export function buildAppliedJobStats(jobs = []) {
@@ -879,91 +750,19 @@ export async function deleteChatSession(sessionId) {
   return true
 }
 
-export async function loadCandidateApplicationSummary() {
-  const fallback = async () => {
-    const mock = await loadMockJobs()
-    const items = Array.isArray(mock?.appliedJobsResponse?.data?.jobs)
-      ? mock.appliedJobsResponse.data.jobs
-      : Array.isArray(mock?.appliedJobs)
-        ? mock.appliedJobs
-        : []
-
-    return {
-      totalApplied: items.length,
-      hired: items.filter((item) => item.status === 'hired' || item.my_application?.status === 'hired').length,
-    }
-  }
-
-  try {
-    const [allPayload, hiredPayload] = await Promise.all([
-      requestJson('/jobs/me/applied?page=1&limit=1', { auth: true }),
-      requestJson('/jobs/me/applied?page=1&limit=1&status=hired', { auth: true }),
-    ])
-
-    return {
-      totalApplied: Number(allPayload?.data?.pagination?.total || 0),
-      hired: Number(hiredPayload?.data?.pagination?.total || 0),
-    }
-  } catch (error) {
-    if (isMockDataEnabled()) return fallback()
-    throw error
-  }
-}
-
-export async function loadCandidateRecentActivities() {
-  const fallback = async () => {
-    const mock = await loadMockJobs()
-    const items = getAppliedItems(mock?.appliedJobsResponse?.data)
-    return items
-      .slice()
-      .sort((a, b) => new Date(getApplicationUpdatedAt(b)).getTime() - new Date(getApplicationUpdatedAt(a)).getTime())
-      .slice(0, 5)
-      .map((item) => mapApplicationActivity(item))
-  }
-
-  try {
-    const payload = await requestJson('/jobs/me/applied?page=1&limit=5', { auth: true })
-    const items = getAppliedItems(payload?.data)
-    return items.map((item) => mapApplicationActivity(item))
-  } catch {
-    return fallback()
-  }
-}
-
 export async function loadCandidateDashboardSnapshot() {
-  const fallback = async () => {
-    const mock = await loadMockJobs()
-    const items = getAppliedItems(mock?.appliedJobsResponse?.data)
-    const sortedItems = items
-      .slice()
-      .sort((a, b) => new Date(getApplicationUpdatedAt(b)).getTime() - new Date(getApplicationUpdatedAt(a)).getTime())
+  const payload = await requestJson('/jobs/me/applied?page=1&limit=100', { auth: true })
+  const items = getAppliedItems(payload?.data)
+  const sortedItems = items
+    .slice()
+    .sort((a, b) => new Date(getApplicationUpdatedAt(b)).getTime() - new Date(getApplicationUpdatedAt(a)).getTime())
 
-    return {
-      summary: {
-        totalApplied: items.length,
-        hired: items.filter((item) => item.status === 'hired' || item.my_application?.status === 'hired').length,
-      },
-      recentActivities: sortedItems.slice(0, 5).map((item) => mapApplicationActivity(item)),
-    }
-  }
-
-  try {
-    const payload = await requestJson('/jobs/me/applied?page=1&limit=100', { auth: true })
-    const items = getAppliedItems(payload?.data)
-    const sortedItems = items
-      .slice()
-      .sort((a, b) => new Date(getApplicationUpdatedAt(b)).getTime() - new Date(getApplicationUpdatedAt(a)).getTime())
-
-    return {
-      summary: {
-        totalApplied: Number(payload?.data?.pagination?.total || items.length),
-        hired: items.filter((item) => getApplicationStatus(item) === 'hired').length,
-      },
-      recentActivities: sortedItems.slice(0, 5).map((item) => mapApplicationActivity(item)),
-    }
-  } catch (error) {
-    if (isMockDataEnabled()) return fallback()
-    throw error
+  return {
+    summary: {
+      totalApplied: Number(payload?.data?.pagination?.total || items.length),
+      hired: items.filter((item) => getApplicationStatus(item) === 'hired').length,
+    },
+    recentActivities: sortedItems.slice(0, 5).map((item) => mapApplicationActivity(item)),
   }
 }
 
@@ -1480,70 +1279,34 @@ export async function createCompanyProfile(payload) {
 }
 
 export async function loadFavoriteJobs() {
-  const token = getAccessToken()
-  if (token) {
-    try {
-      const payload = await requestJson('/user/favorite-jobs', { auth: true })
-      const items = Array.isArray(payload?.data?.jobs)
-        ? payload.data.jobs
-        : Array.isArray(payload?.data?.items)
-          ? payload.data.items
-          : Array.isArray(payload?.data)
-            ? payload.data
-            : []
-
-      if (items.length) {
-        return items.map((item) => normalizePublicJob(item.job || item))
-      }
-    } catch {
-      // Fall back to local mock data when the backend is unavailable.
-    }
-  }
-
-  const mock = await loadMockJobs()
-  const raw = localStorage.getItem(FAVORITE_STORAGE_KEY)
-  const ids = raw ? JSON.parse(raw) : []
-  const set = new Set(Array.isArray(ids) ? ids : [])
-  return (mock.jobs || []).filter((job) => set.has(job.id))
+  const payload = await requestJson('/user/favorite-jobs', { auth: true })
+  const items = Array.isArray(payload?.data?.jobs)
+    ? payload.data.jobs
+    : Array.isArray(payload?.data?.items)
+      ? payload.data.items
+      : Array.isArray(payload?.data)
+        ? payload.data
+        : []
+  return items.map((item) => normalizePublicJob(item.job || item))
 }
 
 export async function loadFavoriteIds() {
   const token = getAccessToken()
-  if (token) {
-    if (
-      favoriteIdsCache &&
-      favoriteIdsCache.token === token &&
-      Date.now() - favoriteIdsCache.time < FAVORITE_CACHE_TTL
-    ) {
-      return favoriteIdsCache.ids
-    }
-
-    try {
-      const payload = await requestJson('/user/favorite-jobs', { auth: true })
-      const items = Array.isArray(payload?.data?.jobs)
-        ? payload.data.jobs
-        : Array.isArray(payload?.data)
-          ? payload.data
-          : []
-      if (items.length) {
-        const ids = items.map((item) => item.job?._id || item.job?.id || item._id || item.id).filter(Boolean)
-        favoriteIdsCache = { token, time: Date.now(), ids }
-        return ids
-      }
-      favoriteIdsCache = { token, time: Date.now(), ids: [] }
-      return []
-    } catch {
-      // Fall back to locally stored favorite ids when the backend is unavailable.
-    }
+  if (
+    favoriteIdsCache &&
+    favoriteIdsCache.token === token &&
+    Date.now() - favoriteIdsCache.time < FAVORITE_CACHE_TTL
+  ) {
+    return favoriteIdsCache.ids
   }
 
-  try {
-    const raw = localStorage.getItem(FAVORITE_STORAGE_KEY)
-    const ids = raw ? JSON.parse(raw) : []
-    return Array.isArray(ids) ? ids : []
-  } catch {
-    return []
-  }
+  const payload = await requestJson('/user/favorite-jobs', { auth: true })
+  const items = Array.isArray(payload?.data?.jobs)
+    ? payload.data.jobs
+    : Array.isArray(payload?.data) ? payload.data : []
+  const ids = items.map((item) => item.job?._id || item.job?.id || item._id || item.id).filter(Boolean)
+  favoriteIdsCache = { token, time: Date.now(), ids }
+  return ids
 }
 
 export async function toggleFavoriteJob(jobId, shouldFavorite) {
@@ -1679,12 +1442,3 @@ export async function uploadUserResume({ title, file, isDefault = false, onProgr
     updatedAt: item.updated_at || '',
   }
 }
-
-export async function loadEditableAppliedProfile(cvId) {
-  const mock = await loadMockProfileEdit()
-  const items = Array.isArray(mock?.data?.profiles) ? mock.data.profiles : []
-  return items.find((item) => String(item.cv_id) === String(cvId)) || null
-}
-
-
-

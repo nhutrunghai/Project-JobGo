@@ -50,9 +50,6 @@ export default function PublicHeader({
           {isAuthenticated ? (
             <>
               <NotificationBell className={compactActionClass} />
-              <Link to="/messages" aria-label="Tin nhắn" className={compactActionClass}>
-                <span className="material-symbols-outlined">chat</span>
-              </Link>
               <UserProfileMenu
                 profileName={profileName}
                 profileHandle={profileHandle}

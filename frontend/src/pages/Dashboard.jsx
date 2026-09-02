@@ -50,7 +50,6 @@ const fallbackDashboard = {
     { label: 'Tìm việc', icon: 'search', to: '/search-jobs' },
     { label: 'Hồ sơ', icon: 'person', to: '/user/profile' },
     { label: 'Ví', icon: 'account_balance_wallet', to: '/wallet/top-up' },
-    { label: 'Tin nhắn', icon: 'chat_bubble_outline', to: '/messages' },
   ],
   activities: [
     {
@@ -70,7 +69,6 @@ function getQuickActionPath(item) {
   if (label.includes('tìm') || label.includes('việc') || icon === 'search') return '/search-jobs'
   if (label.includes('hồ') || label.includes('profile') || icon === 'person') return '/user/profile'
   if (label.includes('ví') || icon === 'account_balance_wallet') return '/wallet/top-up'
-  if (label.includes('tin') || icon.includes('chat')) return '/messages'
   return '/dashboard'
 }
 

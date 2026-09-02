@@ -16,22 +16,13 @@ const candidateSections = [
     title: 'Quản lý Job',
     items: [
       { key: 'uploaded-cvs', icon: 'description', label: 'CV đã tải lên', to: '/uploaded-cvs' },
-      { key: 'job-progress', icon: 'bar_chart', label: 'Tiến độ công việc', to: '/job-progress' },
       { key: 'applied-jobs', icon: 'assignment_turned_in', label: 'Việc đã ứng tuyển', to: '/jobs' },
-      { key: 'contracts', icon: 'description', label: 'Hợp đồng', to: '/contracts' },
-    ],
-  },
-  {
-    title: 'Dịch vụ & Milestone',
-    items: [
       { key: 'wallet', icon: 'account_balance_wallet', label: 'Ví & nạp tiền', to: '/wallet/top-up' },
-      { key: 'milestone', icon: 'target', label: 'Quản lý Milestone', to: '/milestones' },
     ],
   },
   {
     title: 'Giao tiếp',
     items: [
-      { key: 'messages', icon: 'chat_bubble_outline', label: 'Tin nhắn', to: '/messages', badge: '3', badgeTone: 'rose' },
       { key: 'notifications', icon: 'notifications_none', label: 'Thông báo', to: '/notifications', badge: '', badgeTone: 'sky' },
     ],
   },
@@ -57,20 +48,12 @@ const employerSections = [
     title: 'Quản lý ứng viên',
     items: [
       { key: 'received-cv', icon: 'description', label: 'Hồ sơ đã nhận', to: '/employer-received-cv' },
-      { key: 'interviews', icon: 'calendar_month', label: 'Lịch phỏng vấn', to: '/employer-interviews' },
-    ],
-  },
-  {
-    title: 'Dịch vụ & Milestone',
-    items: [
       { key: 'wallet', icon: 'account_balance_wallet', label: 'Ví & nạp tiền', to: '/wallet/top-up' },
-      { key: 'milestone', icon: 'target', label: 'Quản lý Milestone', to: '/employer-milestones' },
     ],
   },
   {
     title: 'Giao tiếp',
     items: [
-      { key: 'messages', icon: 'chat_bubble_outline', label: 'Tin nhắn', to: '/employer-messages', badge: '3', badgeTone: 'rose' },
       { key: 'notifications', icon: 'notifications_none', label: 'Thông báo', to: '/employer-notifications', badge: '', badgeTone: 'sky' },
     ],
   },
@@ -84,11 +67,8 @@ function toneClass(tone) {
 
 const activeKeyAliases = {
   jobs: 'job-list',
-  milestones: 'milestone',
   'employer-dashboard': 'dashboard',
-  'employer-messages': 'messages',
   'employer-notifications': 'notifications',
-  'employer-interviews': 'interviews',
   'employer-job-promotions': 'job-promotions',
 }
 
